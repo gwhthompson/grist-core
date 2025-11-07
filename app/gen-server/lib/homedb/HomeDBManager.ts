@@ -14,7 +14,7 @@ import {
   mergedFeatures,
   PERSONAL_FREE_PLAN
 } from 'app/common/Features';
-import {buildUrlId, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
+import {buildUrlId, getSingleOrg, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
 import {UserProfile} from 'app/common/LoginSessionAPI';
 import {checkSubdomainValidity} from 'app/common/orgNameUtils';
 import {DocPrefs, FullDocPrefs} from 'app/common/Prefs';
@@ -4474,7 +4474,17 @@ export class HomeDBManager implements HomeDBAuth {
       qb = qb.andWhere('orgs.id = :orgId', {orgId});
     } else {
       // this is a regular domain
-      qb = qb.andWhere('orgs.domain = :org', {org});
+      // In single-org mode, also include personal orgs to ensure documents in personal orgs
+      // are accessible via the API. This maintains API compatibility where personal orgs
+      // are returned by GET /api/orgs and their workspaces/docs should be accessible.
+      const singleOrg = getSingleOrg();
+      if (singleOrg) {
+        qb = qb.andWhere(new Brackets(q =>
+          q.where('orgs.domain = :org', {org})
+           .orWhere('orgs.owner_id is not null')));
+      } else {
+        qb = qb.andWhere('orgs.domain = :org', {org});
+      }
     }
     return qb;
   }
