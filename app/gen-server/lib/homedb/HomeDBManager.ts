@@ -14,7 +14,7 @@ import {
   mergedFeatures,
   PERSONAL_FREE_PLAN
 } from 'app/common/Features';
-import {buildUrlId, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
+import {buildUrlId, getSingleOrg, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
 import {UserProfile} from 'app/common/LoginSessionAPI';
 import {checkSubdomainValidity} from 'app/common/orgNameUtils';
 import {DocPrefs, FullDocPrefs} from 'app/common/Prefs';
@@ -4440,7 +4440,9 @@ export class HomeDBManager implements HomeDBAuth {
   // Adds a where clause to filter orgs by domain or id.
   // If org is null, filter for user's personal org.
   // if includeSupport is true, include the org of the support@ user (for the Samples workspace)
-  private _whereOrg<T extends WhereExpressionBuilder>(qb: T, org: string|number, includeSupport = false): T {
+  // if allowPersonalOrgs is true, also include all personal orgs (for GRIST_SINGLE_ORG mode)
+  private _whereOrg<T extends WhereExpressionBuilder>(qb: T, org: string|number, includeSupport = false,
+                                                       allowPersonalOrgs = false): T {
     if (this.isMergedOrg(org)) {
       // Select from universe of personal orgs.
       // Don't panic though!  While this means that SQL can't use an organization id
@@ -4451,10 +4453,19 @@ export class HomeDBManager implements HomeDBAuth {
     }
     // Always include the org of the support@ user, which contains the Samples workspace,
     // which we always show. (For isMergedOrg case, it's already included.)
-    if (includeSupport) {
+    // Also include personal orgs if allowPersonalOrgs is true (for GRIST_SINGLE_ORG mode).
+    if (includeSupport || allowPersonalOrgs) {
       const supportId = this._usersManager.getSpecialUserId(SUPPORT_EMAIL);
-      return qb.andWhere(new Brackets((q) =>
-        this._wherePlainOrg(q, org).orWhere('orgs.owner_id = :supportId', {supportId})));
+      return qb.andWhere(new Brackets((q) => {
+        this._wherePlainOrg(q, org);
+        if (includeSupport) {
+          q.orWhere('orgs.owner_id = :supportId', {supportId});
+        }
+        if (allowPersonalOrgs) {
+          q.orWhere('orgs.owner_id is not null');
+        }
+        return q;
+      }));
     } else {
       return this._wherePlainOrg(qb, org);
     }
@@ -5039,7 +5050,13 @@ export class HomeDBManager implements HomeDBAuth {
       // Filtering on merged org is a special case, see urlIdQuery
       const mergedOrg = this.isMergedOrg(limit.org || null);
       if (!mergedOrg) {
-        qb = this._whereOrg(qb, limit.org, limit.includeSupport || false);
+        // When GRIST_SINGLE_ORG is set to a team org (not "docs"), also allow access to personal orgs
+        // This ensures API consistency: if personal orgs are visible and documents can be created in them,
+        // those documents should also be accessible.
+        const singleOrg = getSingleOrg();
+        const allowPersonalOrgs = singleOrg && singleOrg !== 'docs' &&
+                                   limit.org === singleOrg && resources.includes('docs');
+        qb = this._whereOrg(qb, limit.org, limit.includeSupport || false, allowPersonalOrgs);
       }
     }
     if (limit.users || limit.userId) {
