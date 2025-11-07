@@ -4449,6 +4449,27 @@ export class HomeDBManager implements HomeDBAuth {
       qb = qb.andWhere('orgs.owner_id is not null');
       return qb;
     }
+
+    // When GRIST_SINGLE_ORG is set to a non-"docs" value, we need to include both
+    // the specified org AND personal orgs for backwards compatibility.
+    // This allows existing personal org docs to remain accessible while new docs
+    // are created in the single org.
+    const singleOrg = process.env.GRIST_SINGLE_ORG;
+    const includePersonalOrgs = singleOrg && singleOrg !== 'docs' && typeof org === 'string' && org === singleOrg;
+
+    if (includePersonalOrgs) {
+      // Include both the single org and personal orgs
+      const supportId = includeSupport ? this._usersManager.getSpecialUserId(SUPPORT_EMAIL) : null;
+      return qb.andWhere(new Brackets((q) => {
+        q.where('orgs.owner_id is not null');  // Personal orgs
+        this._wherePlainOrg(q.orWhere(new Brackets(inner => inner)), org);  // Single org
+        if (supportId) {
+          q.orWhere('orgs.owner_id = :supportId', {supportId});  // Support org
+        }
+        return q;
+      }));
+    }
+
     // Always include the org of the support@ user, which contains the Samples workspace,
     // which we always show. (For isMergedOrg case, it's already included.)
     if (includeSupport) {

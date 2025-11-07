@@ -497,7 +497,19 @@ export class UsersManager {
         login.user = user;
         await manager.save([user, login]);
       }
-      if (!user.personalOrg && !NON_LOGIN_EMAILS.includes(login.email)) {
+      // Only create personal org if:
+      // 1. User doesn't already have one
+      // 2. Not a special non-login user
+      // 3. Either GRIST_SINGLE_ORG is not set, or it's set to "docs" (personal-only mode)
+      //
+      // When GRIST_SINGLE_ORG is set to a team org name, we don't create personal orgs
+      // for new users - they should use the team org instead.
+      const singleOrg = process.env.GRIST_SINGLE_ORG;
+      const shouldCreatePersonalOrg = !user.personalOrg &&
+                                      !NON_LOGIN_EMAILS.includes(login.email) &&
+                                      (!singleOrg || singleOrg === 'docs');
+
+      if (shouldCreatePersonalOrg) {
         // Add a personal organization for this user.
         // We don't add a personal org for anonymous/everyone/previewer "users" as it could
         // get a bit confusing.
