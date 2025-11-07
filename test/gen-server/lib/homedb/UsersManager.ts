@@ -755,6 +755,81 @@ describe('UsersManager', function () {
         assert.equal(org.data.name, 'Personal');
       });
 
+      describe('GRIST_SINGLE_ORG personal org behavior', function () {
+        let envSnapshot: EnvironmentSnapshot;
+
+        beforeEach(function () {
+          envSnapshot = new EnvironmentSnapshot();
+        });
+
+        afterEach(function () {
+          envSnapshot.restore();
+        });
+
+        it('should create personal org when GRIST_SINGLE_ORG is not set', async function () {
+          delete process.env.GRIST_SINGLE_ORG;
+          const localPart = ensureUnique('singleorg-not-set-creates-personal-org');
+          const user = await db.getUserByLogin(makeEmail(localPart));
+          assertExists(user.personalOrg, 'should have personal org');
+          const org = await getPersonalOrg(user);
+          assertExists(org.data);
+          assert.equal(org.data.name, 'Personal');
+        });
+
+        it('should create personal org when GRIST_SINGLE_ORG=docs', async function () {
+          process.env.GRIST_SINGLE_ORG = 'docs';
+          const localPart = ensureUnique('singleorg-docs-creates-personal-org');
+          const user = await db.getUserByLogin(makeEmail(localPart));
+          assertExists(user.personalOrg, 'should have personal org');
+          const org = await getPersonalOrg(user);
+          assertExists(org.data);
+          assert.equal(org.data.name, 'Personal');
+        });
+
+        it('should NOT create personal org when GRIST_SINGLE_ORG is set to a team name', async function () {
+          process.env.GRIST_SINGLE_ORG = 'testteam';
+          const localPart = ensureUnique('singleorg-team-skips-personal-org');
+          const user = await db.getUserByLogin(makeEmail(localPart));
+          assert.notExists(user.personalOrg, 'should not have personal org when GRIST_SINGLE_ORG is set to a team');
+        });
+
+        it('should attempt to add user to team org when GRIST_SINGLE_ORG is set to a team name', async function () {
+          // Create a test team org first
+          const testOrgDomain = 'test-team-org';
+          const ownerEmail = ensureUnique('test-team-org-owner');
+          const ownerUser = await db.getUserByLogin(makeEmail(ownerEmail));
+          const orgResult = await db.addOrg(ownerUser, {name: 'Test Team Org', domain: testOrgDomain}, {});
+          assertExists(orgResult.data);
+
+          // Set GRIST_SINGLE_ORG to this team
+          process.env.GRIST_SINGLE_ORG = testOrgDomain;
+
+          // Create a new user - they should be added to the team org
+          const localPart = ensureUnique('singleorg-team-adds-to-members');
+          const newUser = await db.getUserByLogin(makeEmail(localPart));
+          assert.notExists(newUser.personalOrg, 'should not have personal org');
+
+          // Verify the user was added to the team org's MEMBERS group
+          const orgWithMembers = await db.getOrg({userId: newUser.id}, orgResult.data.id);
+          assertExists(orgWithMembers.data);
+
+          // Check if the user has access to the org
+          const userOrgs = await db.getOrgs(newUser.id, null);
+          assertExists(userOrgs.data);
+          const hasAccessToTeamOrg = userOrgs.data.some(org => org.id === orgResult.data!.id);
+          assert.isTrue(hasAccessToTeamOrg, 'user should have access to the team org');
+        });
+
+        it('should not fail user creation when team org does not exist', async function () {
+          process.env.GRIST_SINGLE_ORG = 'nonexistent-team';
+          const localPart = ensureUnique('singleorg-nonexistent-team');
+          // This should not throw - user creation should succeed even if team membership fails
+          const user = await db.getUserByLogin(makeEmail(localPart));
+          assertExists(user);
+          assert.notExists(user.personalOrg, 'should not have personal org');
+        });
+      });
+
       it('should not create organizations for non-login emails', async function () {
         const user = await db.getUserByLogin(EVERYONE_EMAIL);
         assert.notExists(user.personalOrg);

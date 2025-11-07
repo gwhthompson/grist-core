@@ -418,7 +418,7 @@ Grist can be configured in many ways. Here are the main environment variables it
 | GRIST_SQLITE_MODE | if set to `wal`, use SQLite in [WAL mode](https://www.sqlite.org/wal.html), if set to `sync`, use SQLite with [SYNCHRONOUS=full](https://www.sqlite.org/pragma.html#pragma_synchronous)
 | GRIST_ANON_PLAYGROUND | When set to `false` deny anonymous users access to the home page (but documents can still be shared to anonymous users). Defaults to `true`. |
 | GRIST_FORCE_LOGIN | Setting it to `true` is similar to setting `GRIST_ANON_PLAYGROUND: false` but it blocks any anonymous access (thus any document shared publicly actually requires the users to be authenticated before consulting them) |
-| GRIST_SINGLE_ORG | set to an org "domain" to pin client to that org |
+| GRIST_SINGLE_ORG | set to an org "domain" to pin client to that org. When unset, users get personal orgs. When set to `docs`, users get personal orgs only (no team orgs). When set to a team domain, users are added to that team org without personal orgs. |
 | GRIST_TEMPLATE_ORG | set to an org "domain" to show public docs from that org |
 | GRIST_HELP_CENTER | set the help center link ref |
 | GRIST_TERMS_OF_SERVICE_URL | if set, adds terms of service link |

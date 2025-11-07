@@ -27,6 +27,7 @@ import {
 } from 'app/gen-server/lib/homedb/Interfaces';
 import { Permissions } from 'app/gen-server/lib/Permissions';
 import { Pref } from 'app/gen-server/entity/Pref';
+import log from 'app/server/lib/log';
 
 import flatten from 'lodash/flatten';
 import { EntityManager, IsNull, Not } from 'typeorm';
@@ -498,24 +499,56 @@ export class UsersManager {
         await manager.save([user, login]);
       }
       if (!user.personalOrg && !NON_LOGIN_EMAILS.includes(login.email)) {
-        // Add a personal organization for this user.
-        // We don't add a personal org for anonymous/everyone/previewer "users" as it could
-        // get a bit confusing.
-        const result = await this._homeDb.addOrg(user, {name: "Personal"}, {
-          setUserAsOwner: true,
-          useNewPlan: true,
-          product: PERSONAL_FREE_PLAN,
-        }, manager);
-        if (result.status !== 200) {
-          throw new Error(result.errMessage);
-        }
-        needUpdate = true;
+        // Determine whether to create a personal org based on GRIST_SINGLE_ORG configuration.
+        //
+        // ARCHITECTURE NOTE: GRIST_SINGLE_ORG controls personal org creation:
+        // - NOT SET: Multi-org mode - create personal orgs for all users
+        // - "docs": Personal-org-only mode - create personal orgs, no team orgs
+        // - "teamname": Single team mode - skip personal org creation, user belongs to team only
+        //
+        // This ensures architectural consistency: resources that exist are always accessible.
+        // Previously, personal orgs were created unconditionally but docs were inaccessible
+        // when GRIST_SINGLE_ORG was set to a team name, creating "zombie" resources.
+        const singleOrg = process.env.GRIST_SINGLE_ORG;
+        const shouldCreatePersonalOrg = !singleOrg || singleOrg === 'docs';
 
-        // We just created a personal org; set userOrgPrefs that should apply for new users only.
-        const userOrgPrefs: UserOrgPrefs = {showGristTour: true};
-        const org = result.data;
-        if (org) {
-          await this._homeDb.updateOrg({userId: user.id}, org.id, {userOrgPrefs}, manager);
+        if (shouldCreatePersonalOrg) {
+          // Add a personal organization for this user.
+          // We don't add a personal org for anonymous/everyone/previewer "users" as it could
+          // get a bit confusing.
+          const result = await this._homeDb.addOrg(user, {name: "Personal"}, {
+            setUserAsOwner: true,
+            useNewPlan: true,
+            product: PERSONAL_FREE_PLAN,
+          }, manager);
+          if (result.status !== 200) {
+            throw new Error(result.errMessage);
+          }
+          needUpdate = true;
+
+          // We just created a personal org; set userOrgPrefs that should apply for new users only.
+          const userOrgPrefs: UserOrgPrefs = {showGristTour: true};
+          const org = result.data;
+          if (org) {
+            await this._homeDb.updateOrg({userId: user.id}, org.id, {userOrgPrefs}, manager);
+          }
+        } else {
+          // GRIST_SINGLE_ORG is set to a team name - skip personal org creation.
+          // Instead, ensure the user is added to the configured team org.
+          log.info(`GRIST_SINGLE_ORG=${singleOrg}: Skipping personal org creation for user ${user.id} (${login.email})`);
+
+          // Attempt to add user to the configured team org's MEMBERS group.
+          // This is a best-effort operation - if the org doesn't exist or doesn't have a MEMBERS
+          // group, we log a warning but don't fail user creation.
+          try {
+            await this._ensureUserInTeamOrg(user, singleOrg, manager);
+          } catch (err) {
+            log.error(`Failed to add user ${user.id} to team org ${singleOrg}: ${err.message}`);
+            // Note: We don't throw here - user creation should succeed even if team membership fails.
+            // Admin will need to manually add the user to the team org.
+            log.warn(`User ${user.id} (${login.email}) created but not added to team org ${singleOrg}. ` +
+                     `Please ensure the org exists and manually add the user if needed.`);
+          }
         }
       }
       if (needUpdate) {
@@ -525,6 +558,71 @@ export class UsersManager {
       }
       return user!;
     });
+  }
+
+  /**
+   * Ensures a user is added to the MEMBERS group of the configured team org in single-org mode.
+   *
+   * This is called when GRIST_SINGLE_ORG is set to a team name (not "docs") and we skip
+   * personal org creation. The user should instead be added to the configured team org.
+   *
+   * @param user - The user to add to the team org
+   * @param orgDomain - The domain of the org (from GRIST_SINGLE_ORG)
+   * @param manager - The entity manager for the current transaction
+   * @throws Error if the org or MEMBERS group cannot be found
+   */
+  private async _ensureUserInTeamOrg(user: User, orgDomain: string, manager: EntityManager): Promise<void> {
+    // Find the org by domain
+    const org = await manager
+      .createQueryBuilder()
+      .select('org')
+      .from('orgs', 'org')
+      .where('org.domain = :domain', {domain: orgDomain})
+      .andWhere('org.owner_id IS NULL')  // Team orgs have no owner
+      .getRawOne();
+
+    if (!org) {
+      throw new Error(`Team org with domain '${orgDomain}' not found. Please create the org first.`);
+    }
+
+    const orgId = org.org_id;
+
+    // Find the MEMBERS group for this org
+    const membersGroup = await manager
+      .createQueryBuilder()
+      .select('g')
+      .from(Group, 'g')
+      .innerJoin('acl_rules', 'acl', 'acl.group_id = g.id')
+      .where('acl.org_id = :orgId', {orgId})
+      .andWhere('g.name = :groupName', {groupName: roles.MEMBER})
+      .getOne();
+
+    if (!membersGroup) {
+      throw new Error(`MEMBERS group not found for org '${orgDomain}'. The org may not be properly initialized.`);
+    }
+
+    // Check if user is already a member
+    const existingMembership = await manager
+      .createQueryBuilder()
+      .select('gu')
+      .from('group_users', 'gu')
+      .where('gu.group_id = :groupId', {groupId: membersGroup.id})
+      .andWhere('gu.user_id = :userId', {userId: user.id})
+      .getRawOne();
+
+    if (existingMembership) {
+      log.info(`User ${user.id} already a member of org ${orgDomain}`);
+      return;
+    }
+
+    // Add user to the MEMBERS group
+    await manager
+      .createQueryBuilder()
+      .relation(Group, 'memberUsers')
+      .of(membersGroup)
+      .add(user);
+
+    log.info(`Added user ${user.id} (${user.name}) to MEMBERS group of org ${orgDomain}`);
   }
 
   /*
