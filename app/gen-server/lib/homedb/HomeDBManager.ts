@@ -14,7 +14,7 @@ import {
   mergedFeatures,
   PERSONAL_FREE_PLAN
 } from 'app/common/Features';
-import {buildUrlId, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
+import {buildUrlId, getSingleOrg, MIN_URLID_PREFIX_LENGTH, parseUrlId} from 'app/common/gristUrls';
 import {UserProfile} from 'app/common/LoginSessionAPI';
 import {checkSubdomainValidity} from 'app/common/orgNameUtils';
 import {DocPrefs, FullDocPrefs} from 'app/common/Prefs';
@@ -4447,6 +4447,18 @@ export class HomeDBManager implements HomeDBAuth {
       // to narrow down queries, it will still be filtering via joins against the user and
       // groups the user belongs to.
       qb = qb.andWhere('orgs.owner_id is not null');
+      return qb;
+    }
+    // When GRIST_SINGLE_ORG is set to a non-"docs" value, include both the single org
+    // and personal orgs to allow users to access documents in their personal orgs.
+    const singleOrg = getSingleOrg();
+    if (singleOrg && !this.isMergedOrg(singleOrg) && org === singleOrg) {
+      // Include both the single org and all personal orgs
+      qb = qb.andWhere(new Brackets((q) =>
+        this._wherePlainOrg(q, org).orWhere('orgs.owner_id is not null')));
+      if (includeSupport) {
+        // Support org is a personal org, so it's already included
+      }
       return qb;
     }
     // Always include the org of the support@ user, which contains the Samples workspace,
