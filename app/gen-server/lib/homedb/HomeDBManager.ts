@@ -953,7 +953,13 @@ export class HomeDBManager implements HomeDBAuth {
         return {status: 200, data: []};
       }
     }
-    return this._verifyAclPermissions(queryBuilder, {emptyAllowed: true});
+    const result = await this._verifyAclPermissions(queryBuilder, {emptyAllowed: true});
+    if (result.status === 200 && process.env.GRIST_SINGLE_ORG &&
+        process.env.GRIST_SINGLE_ORG !== 'docs') {
+      // Hide personal orgs for consistency when their docs are inaccessible.
+      return {status: 200, data: result.data.filter(org => org.owner === null)};
+    }
+    return result;
   }
 
   // As for getOrgs, but all personal orgs are merged into a single entry.
