@@ -25,6 +25,8 @@ This document provides comprehensive documentation for all Grist metadata tables
   - [_grist_Triggers](#_grist_triggers)
   - [_grist_Cells](#_grist_cells)
   - [_grist_Shares](#_grist_shares)
+  - [_grist_Validations](#_grist_validations)
+  - [_grist_REPL_Hist](#_grist_repl_hist)
 - [Deprecated Tables](#deprecated-tables)
 - [Data Types Reference](#data-types-reference)
 - [Storage vs Wire Format](#storage-vs-wire-format)
@@ -274,12 +276,14 @@ Filter configurations for view sections.
 
 ### _grist_TabBar
 
-**DEPRECATED** - Use _grist_Pages instead.
+**Note:** This table is maintained for compatibility. For hierarchical page structures, see _grist_Pages.
+
+Stores views in the tab bar with their positions.
 
 | Column Name | Type | Description | Default | Required | Notes |
 |-------------|------|-------------|---------|----------|-------|
-| viewRef | Ref:_grist_Views | View in tab bar | `0` | | |
-| tabPos | PositionNumber | Position in tab bar | `inf` | | |
+| viewRef | Ref:_grist_Views | View displayed in tab bar | `0` | ✓ | |
+| tabPos | PositionNumber | Position in tab bar | `inf` | ✓ | Determines tab order |
 
 ---
 
@@ -499,6 +503,34 @@ Public share configurations.
 
 ---
 
+### _grist_Validations
+
+**Note:** This table appears in describeDocActions.ts as deprecated, but is still present in the schema and may have limited use.
+
+Validation rules for Grist documents.
+
+| Column Name | Type | Description | Default | Required | Notes |
+|-------------|------|-------------|---------|----------|-------|
+| formula | Text | Validation formula | `""` | | Python expression |
+| name | Text | Validation rule name | `""` | | User-visible name |
+| tableRef | Int | Table this validation applies to | `0` | | Reference to table ID |
+
+---
+
+### _grist_REPL_Hist
+
+**Note:** This table appears in describeDocActions.ts as deprecated, but is still present in the schema.
+
+REPL history for usercode - stores input code and output.
+
+| Column Name | Type | Description | Default | Required | Notes |
+|-------------|------|-------------|---------|----------|-------|
+| code | Text | Input code | `""` | | Python code entered |
+| outputText | Text | Output text | `""` | | Result of execution |
+| errorText | Text | Error text | `""` | | Errors if any |
+
+---
+
 ## Deprecated Tables
 
 These tables are kept for compatibility but should not be used in new code.
@@ -517,12 +549,6 @@ These tables are kept for compatibility but should not be used in new code.
 
 ### _grist_TabItems
 **DEPRECATED** - Previously cross-referenced Tables and Views. Do not use.
-
-### _grist_Validations
-**DEPRECATED** - Validation rules. Do not use.
-
-### _grist_REPL_Hist
-**DEPRECATED** - REPL history for usercode. Do not use.
 
 ### _grist_ACLPrincipals
 **DEPRECATED** - Principals (users, groups, instances). Do not use.
