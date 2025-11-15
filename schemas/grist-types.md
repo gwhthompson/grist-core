@@ -1,215 +1,480 @@
 # Grist Type System Reference
 
-A complete reference for Grist's type system - column types, CellValue encoding, widget options, and validation rules for developers implementing Grist integrations.
+**Complete reference for Grist's type system** - column types, CellValue encoding, widget options, and validation rules.
+
+**Last Updated**: 2025-11-15
 
 ---
 
-## Quick Reference: Column Types
+## Table of Contents
 
-| Type | Storage Format | Input Example | Output Example | Default Value | Null/Empty | Notes |
-|------|----------------|---------------|----------------|---------------|------------|-------|
-| **Text** | `string` | `"hello"` | `"hello"` | `''` | `''` or `null` | Plain text |
-| **Numeric** | `number` | `123.45` | `123.45` | `0` | `null` | Double precision float |
-| **Int** | `number` | `42` | `42` | `0` | `null` | 32-bit integer |
-| **Bool** | `boolean` | `true` | `true` | `false` | `null` | Stored as 0/1 in SQLite |
-| **Date** | `number` (seconds) | `1704844800` | `['d', 1704844800]` | `null` | `null` | Days since epoch (as seconds) |
-| **DateTime** | `['D', secs, tz]` | `['D', 1704945919, 'UTC']` | `['D', 1704945919, 'UTC']` | `null` | `null` | Seconds since epoch + timezone |
-| **Choice** | `string` | `"option1"` | `"option1"` | `''` | `''` | Single selection |
-| **ChoiceList** | `['L', ...]` | `['L', 'a', 'b']` | `['L', 'a', 'b']` | `null` | `null` | Multiple selections |
-| **Ref** | `number` (row ID) | `17` | `17` | `0` | `0` | Reference to row ⚠️ |
-| **RefList** | `['L', ...]` | `['L', 1, 2, 3]` | `['L', 1, 2, 3]` | `null` | `null` | Multiple row references |
-| **Attachments** | `['L', ...]` | `['L', 123, 456]` | `['L', 123, 456]` | `null` | `null` | Special RefList to `_grist_Attachments` |
-| **Blob** | Binary data | (binary) | (binary) | `null` | `null` | Rarely used, for binary data |
-| **Any** | Various | Any type | Any type | `null` | `null` | For formula columns |
-| **Id** | `number` | `1` | `1` | `0` | `0` | Row ID (auto-generated, read-only) |
-| **PositionNumber** | `number` | `1.5` | `1.5` | `Infinity` | `Infinity` | Internal sorting position |
-| **ManualSortPos** | `number` | `1.5` | `1.5` | `Infinity` | `Infinity` | Manual sort position |
+- [Quick Reference](#quick-reference)
+- [Column Types](#column-types)
+- [CellValue Encoding](#cellvalue-encoding)
+- [Widget Options](#widget-options)
+- [Reference Columns](#reference-columns)
+- [Identifier Validation](#identifier-validation)
+- [Null Handling](#null-handling)
+- [Common Pitfalls](#common-pitfalls)
+
+---
+
+## Quick Reference
+
+### Column Types Overview
+
+| Type | Storage | Input Example | Output Example | Empty Value | Notes |
+|------|---------|---------------|----------------|-------------|-------|
+| **Text** | `string` | `"hello"` | `"hello"` | `''` (empty string) | Plain text |
+| **Numeric** | `number` | `123.45` | `123.45` | `null` | Double precision float |
+| **Int** | `number` | `42` | `42` | `null` | 32-bit integer |
+| **Bool** | `boolean` | `true` | `true` | `null` | Stored as 0/1 in SQLite |
+| **Date** | `number` | `1704844800` | `['d', 1704844800]` | `null` | Days since epoch (seconds) |
+| **DateTime** | `['D', secs, tz]` | `['D', 1704945919, 'UTC']` | `['D', 1704945919, 'UTC']` | `null` | Seconds + timezone |
+| **Choice** | `string` | `"option1"` | `"option1"` | `''` | Single selection |
+| **ChoiceList** | `['L', ...]` | `['L', 'a', 'b']` | `['L', 'a', 'b']` | `null` or `['L']` | Multiple selections |
+| **Ref** | `number` | `17` | `17` | **`0`** | Reference to row ⚠️ |
+| **RefList** | `['L', ...]` | `['L', 1, 2, 3]` | `['L', 1, 2, 3]` | `null` or `['L']` | Multiple row references |
+| **Attachments** | `['L', ...]` | `['L', 123, 456]` | `['L', 123, 456]` | `null` or `['L']` | Special RefList |
+| **Blob** | Binary | (binary) | (binary) | `null` | Rarely used |
+| **Any** | Various | Any type | Any type | `null` | For formula columns |
+| **Id** | `number` | `1` | `1` | `0` | Row ID (auto-generated) |
 
 ### Default vs Null Values
 
-**Important distinction:**
-- **Default Value**: What gets inserted for new records (from `gristTypes.ts:22-42`)
+**CRITICAL DISTINCTION**:
+- **Default Value**: What gets inserted for new records
 - **Null/Empty**: What represents "no value" or empty cell
 
-**Key differences:**
-- `Text`, `Choice`: Default is `''` (empty string), which is also the empty representation
-- `Numeric`, `Int`: Default is `0`, but `null` represents empty/no value
-- `Bool`: Default is `false`, but `null` represents empty/no value
-- `Ref`: Both default AND empty are `0` (zero means "no reference")
-- Most others: Both default and empty are `null`
+| Type | Default (new records) | Empty (no value) | Notes |
+|------|----------------------|------------------|-------|
+| Text, Choice | `''` (empty string) | `''` (empty string) | Empty string for both |
+| Numeric, Int, Bool | `0` or `false` | `null` | Null means "no value" |
+| **Ref** | **`0`** | **`0`** | ⚠️ Zero means "no reference" |
+| RefList, ChoiceList | `null` | `null` or `['L']` | Both valid |
+| Most others | `null` | `null` | |
 
-**Key Source Files:**
-- `app/plugin/GristData.ts:67-69` - GristType definition
-- `app/common/gristTypes.ts:22-42` - Default values per type (see `_defaultValues` map)
-- `app/client/widgets/UserType.ts:38-308` - Widget mappings
+**Source**: `app/common/gristTypes.ts:22-42`
+
+---
+
+## Column Types
+
+### Text
+
+Plain text values.
+
+**Storage**: `string`  
+**Default**: `''` (empty string)  
+**Empty**: `''` (empty string)
+
+**Example**:
+```typescript
+{
+  type: 'Text',
+  value: "Hello World"
+}
+```
+
+**Widget Options**: See Widget Options section
+
+**Source**: `app/common/gristTypes.ts:46`
+
+---
+
+### Numeric
+
+Double precision floating point numbers.
+
+**Storage**: `number`  
+**Default**: `0`  
+**Empty**: `null`
+
+**Range**: IEEE 754 double precision (-1.7E+308 to 1.7E+308)
+
+**Example**:
+```typescript
+{
+  type: 'Numeric',
+  value: 123.45
+}
+```
+
+**Widget Options**: `numMode`, `decimals`, `maxDecimals`, `currency`, `numSign`
+
+**Source**: `app/common/gristTypes.ts:47`
+
+---
+
+### Int
+
+32-bit integer.
+
+**Storage**: `number`  
+**Default**: `0`  
+**Empty**: `null`
+
+**Range**: -2,147,483,648 to 2,147,483,647
+
+**Example**:
+```typescript
+{
+  type: 'Int',
+  value: 42
+}
+```
+
+**Widget Options**: Same as Numeric
+
+**Source**: `app/common/gristTypes.ts:48`
+
+---
+
+### Bool
+
+Boolean (true/false).
+
+**Storage**: `boolean`  
+**Default**: `false`  
+**Empty**: `null`
+
+**SQLite Storage**: 0 (false) or 1 (true)
+
+**Example**:
+```typescript
+{
+  type: 'Bool',
+  value: true
+}
+```
+
+**Source**: `app/common/gristTypes.ts:49`
+
+---
+
+### Date
+
+Date without time (UTC midnight).
+
+**Storage**: `number` (seconds since Unix epoch)  
+**Wire Format**: `['d', timestamp]`  
+**Default**: `null`  
+**Empty**: `null`
+
+**CRITICAL**: Stores seconds, NOT milliseconds!
+
+**Examples**:
+```typescript
+// Stored in database:
+1704844800
+
+// Wire format:
+['d', 1704844800]  // January 10, 2024 00:00:00 UTC
+
+// Creating from JS Date:
+Math.floor(Date.UTC(2024, 0, 10) / 1000)  // ✓ Correct
+Date.now() / 1000  // ❌ Wrong (not UTC midnight)
+```
+
+**Widget Options**: `dateFormat`, `isCustomDateFormat`
+
+**Source**: `app/common/gristTypes.ts:50`
+
+---
+
+### DateTime
+
+Date and time with timezone.
+
+**Storage**: `['D', timestamp, timezone]`  
+**Default**: `null`  
+**Empty**: `null`
+
+**CRITICAL**: Timestamp in seconds, NOT milliseconds!
+
+**Examples**:
+```typescript
+['D', 1704945919, 'America/New_York']  // Specific timezone
+['D', 1704945919, 'UTC']                 // UTC
+['D', 1704945919, '']                    // Document timezone
+
+// Creating:
+const timestamp = Math.floor(Date.now() / 1000);  // ✓ Seconds
+const datetime = ['D', timestamp, 'America/New_York'];
+```
+
+**Widget Options**: `dateFormat`, `timeFormat`, `isCustomDateFormat`, `isCustomTimeFormat`
+
+**Source**: `app/common/gristTypes.ts:51`
+
+---
+
+### Choice
+
+Single selection from a list.
+
+**Storage**: `string`  
+**Default**: `''` (empty string)  
+**Empty**: `''` (empty string)
+
+**Example**:
+```typescript
+{
+  type: 'Choice',
+  value: "In Progress"
+}
+```
+
+**Widget Options**:
+```typescript
+{
+  choices: ['Todo', 'In Progress', 'Done'],
+  choiceOptions: {
+    'Todo': {fillColor: '#FF0000', textColor: '#FFFFFF'},
+    'Done': {fillColor: '#00FF00'}
+  }
+}
+```
+
+**Source**: `app/common/gristTypes.ts:52`
+
+---
+
+### ChoiceList
+
+Multiple selections from a list.
+
+**Storage**: `['L', ...choices]` or `null`  
+**Default**: `null`  
+**Empty**: `null` OR `['L']` (both valid)
+
+**Examples**:
+```typescript
+// Multiple selections
+['L', 'Red', 'Green', 'Blue']
+
+// Empty list - BOTH valid:
+null          // ✓ Valid
+['L']         // ✓ Valid (length 1, just marker)
+
+// Invalid:
+[]            // ❌ Plain empty array not valid
+['L', null]   // ❌ Null inside list not valid
+```
+
+**Widget Options**: Same as Choice
+
+**Source**: `app/common/gristTypes.ts:53`
+
+---
+
+### Ref
+
+Reference to a row in another table.
+
+**Storage**: `number` (row ID)  
+**Type Format**: `'Ref:TableName'`  
+**Default**: `0`  
+**Empty**: **`0`** (zero, NOT null!)
+
+**CRITICAL**: 
+- Empty reference is `0`, NOT `null`
+- `0` means "no reference"
+- Valid row IDs start at 1
+
+**Examples**:
+```typescript
+// Valid reference to row 17
+17
+
+// No reference (null)
+0  // ⚠️ Use 0, NOT null!
+
+// Type specification
+{
+  type: 'Ref:People',
+  value: 17
+}
+```
+
+**Decoded/Lookup Format**:
+```typescript
+// Internal lookup form (temporary):
+['R', 'People', 17]              // Explicit table reference
+['l', 'John', {column: 'name'}]  // Lookup by visible column
+```
+
+**Widget Options**: None (display controlled by `visibleCol` and `displayCol`)
+
+**Source**: `app/common/gristTypes.ts:54-55`
+
+---
+
+### RefList
+
+List of references to rows in another table.
+
+**Storage**: `['L', ...rowIds]` or `null`  
+**Type Format**: `'RefList:TableName'`  
+**Default**: `null`  
+**Empty**: `null` OR `['L']` (both valid)
+
+**CRITICAL**: Uses `'L'` marker, Ref does NOT!
+
+**Examples**:
+```typescript
+// Multiple references
+['L', 17, 42, 99]  // References to rows 17, 42, 99
+
+// Empty list - BOTH valid:
+null   // ✓ Valid
+['L']  // ✓ Valid (length 1, just marker)
+
+// Invalid:
+[]           // ❌ Plain empty array
+[17, 42]     // ❌ Missing 'L' marker
+```
+
+**Internal/Lookup Format**:
+```typescript
+['l', [17, 42], {column: 'visibleColId'}]  // Temporary lookup form
+```
+
+**Widget Options**: None
+
+**Source**: `app/common/gristTypes.ts:56`
+
+---
+
+### Attachments
+
+Special RefList pointing to `_grist_Attachments` table.
+
+**Storage**: `['L', ...attachmentIds]` or `null`  
+**Type**: `'Attachments'`  
+**Default**: `null`  
+**Empty**: `null` OR `['L']`
+
+**Example**:
+```typescript
+['L', 123, 456, 789]  // Attachment IDs
+
+// Each ID references a row in _grist_Attachments with:
+// - fileIdent (checksum)
+// - fileName
+// - fileType (MIME)
+// - fileSize
+```
+
+**Widget Options**:
+```typescript
+{
+  height: '100'  // Display height in pixels
+}
+```
+
+**Source**: `app/common/gristTypes.ts:59-60`
+
+---
+
+### Blob
+
+Binary data (rarely used).
+
+**Storage**: Binary  
+**Default**: `null`  
+**Empty**: `null`
+
+**Note**: Rarely used in practice. Attachments are preferred for file storage.
+
+---
+
+### Any
+
+Any value type (default for formula columns).
+
+**Storage**: Any  
+**Default**: `null`  
+**Empty**: `null`
+
+**Usage**: Formula columns that can return different types
+
+---
+
+### Id
+
+Row ID (auto-generated, read-only).
+
+**Storage**: `number`  
+**Default**: `0` (auto-assigned)  
+**Read-only**: Cannot be manually set
+
+**Notes**:
+- Always present in every table
+- Auto-increments starting from 1
+- Used for references
 
 ---
 
 ## CellValue Encoding
 
-CellValues use either **primitives** (`string`, `number`, `boolean`, `null`) or **encoded tuples** (`[code, ...args]`) for complex types.
+CellValues use either **primitives** or **encoded tuples** for complex types.
 
-### Encoding Reference (GristObjCode)
+### Encoding Codes (GristObjCode)
 
-| Code | Type | Format | Example | Used For |
-|------|------|--------|---------|----------|
+| Code | Type | Format | Example | Purpose |
+|------|------|--------|---------|---------|
 | *none* | **Primitive** | Raw value | `123`, `"text"`, `true`, `null` | Simple types |
 | **`L`** | **List** | `['L', ...values]` | `['L', 'a', 'b']` | ChoiceList, RefList |
-| **`D`** | **DateTime** | `['D', seconds, timezone]` | `['D', 1704945919, 'America/New_York']` | DateTime with timezone |
-| **`d`** | **Date** | `['d', seconds]` | `['d', 1704844800]` | Date (UTC midnight) |
-| **`R`** | **Reference** | `['R', tableId, rowId]` | `['R', 'People', 17]` | Ref (decoded form) |
-| **`r`** | **ReferenceList** | `['r', tableId, rowIds]` | `['r', 'People', [1, 2]]` | RefList (decoded form) |
-| **`l`** | **LookUp** | `['l', value, options]` | `['l', 'John', {column: 'name'}]` | Reference lookup (temp) |
-| **`O`** | **Dict** | `['O', {key: value}]` | `['O', {name: 'John'}]` | Structured data |
+| **`D`** | **DateTime** | `['D', secs, tz]` | `['D', 1704945919, 'UTC']` | DateTime + timezone |
+| **`d`** | **Date** | `['d', secs]` | `['d', 1704844800]` | Date (UTC midnight) |
+| **`R`** | **Reference** | `['R', table, id]` | `['R', 'People', 17]` | Ref (decoded) |
+| **`r`** | **ReferenceList** | `['r', table, ids]` | `['r', 'People', [1, 2]]` | RefList (decoded) |
+| **`l`** | **LookUp** | `['l', val, opts]` | `['l', 'John', {column: 'name'}]` | Lookup (temporary) |
+| **`O`** | **Dict** | `['O', {key: val}]` | `['O', {name: 'John'}]` | Structured data |
 | **`E`** | **Exception** | `['E', name, msg, details]` | `['E', 'ValueError', 'Invalid']` | Formula errors |
 | **`P`** | **Pending** | `['P']` | `['P']` | Formula calculating |
-| **`S`** | **Skip** | `['S']` | `['S']` | Skipped value (displays as `'...'`) |
-| **`C`** | **Censored** | `['C']` | `['C']` | Access control hidden |
+| **`S`** | **Skip** | `['S']` | `['S']` | Skipped (displays as `'...'`) |
+| **`C`** | **Censored** | `['C']` | `['C']` | ACL hidden value |
 | **`U`** | **Unmarshallable** | `['U', repr]` | `['U', '<object>']` | Cannot serialize |
 | **`V`** | **Versions** | `['V', version_obj]` | `['V', {...}]` | Multi-version comparison |
 
-**Key Source Files:**
-- `app/plugin/GristData.ts:1-18` - GristObjCode enum (including Skip at line 10)
-- `app/plugin/objtypes.ts:132-136` - SkipValue class (displays as `'...'`)
-- `app/plugin/objtypes.ts:157-244` - encode/decode functions
-
-### Encoding Details by Type
-
-#### Primitives (Text, Numeric, Int, Bool)
-```typescript
-// Stored and transmitted as-is
-"hello"     // Text
-123.45      // Numeric
-42          // Int
-true        // Bool
-null        // Any null value
-```
-
-#### Date
-```typescript
-// Stored as seconds since Unix epoch (for UTC midnight on that date)
-['d', 1704844800]  // January 10, 2024 00:00:00 UTC
-// Note: NOT milliseconds!
-```
-
-#### DateTime
-```typescript
-// Stored as seconds + timezone string
-['D', 1704945919, 'America/New_York']  // Specific instant with timezone
-['D', 1704945919, 'UTC']                // UTC time
-// Note: Seconds, not milliseconds!
-```
-
-#### ChoiceList
-```typescript
-// Stored as list marker + choices
-['L', 'option1', 'option2', 'option3']  // Multiple selections
-['L']                                    // Empty list (length 1)
-null                                     // Also represents empty
-```
-
-#### RefList
-```typescript
-// Stored as list marker + row IDs
-['L', 17, 42, 99]    // References to rows 17, 42, 99
-['L']                // Empty list
-null                 // Also represents empty
-
-// Internal/lookup form (temporary):
-['l', [17, 42], {column: 'visibleColId'}]
-```
-
-#### Ref (Reference)
-```typescript
-// Stored as plain row ID (not a tuple!)
-17      // Valid reference to row 17
-0       // NULL/empty reference ⚠️ NOT null!
-
-// Decoded/lookup form:
-['R', 'TableName', 17]                     // Explicit table reference
-['l', 'John Smith', {column: 'name'}]      // Lookup by visible column
-```
-
-**Key Source Files:**
-- `app/common/ValueConverter.ts:30-82` - Conversion logic
-- `app/common/gristTypes.ts:75-85` - Reencoding
-
-### Critical Gotchas
-
-#### 1. **RefList uses `'L'` code, Ref is a plain number**
-```typescript
-// ❌ WRONG
-const refValue = ['R', 123];      // Ref is NOT encoded like this in storage!
-
-// ✅ CORRECT
-const refValue = 123;             // Ref is stored as plain row ID
-const refListValue = ['L', 1, 2]; // RefList uses 'L' marker
-```
-
-#### 2. **Ref null is `0`, not `null`**
-```typescript
-// ❌ WRONG
-if (refValue === null) { /* empty ref */ }
-
-// ✅ CORRECT
-if (refValue === 0) { /* empty ref */ }
-```
-
-#### 3. **Empty list is `['L']` (length 1) OR `null`**
-```typescript
-// Both are valid empty lists:
-['L']   // Empty list with marker only
-null    // Also represents empty
-
-// ❌ WRONG
-[]      // Plain empty array is NOT valid
-```
-
-#### 4. **Dates/DateTimes use SECONDS, not milliseconds**
-```typescript
-// ❌ WRONG
-const date = ['d', Date.now()];                    // milliseconds
-
-// ✅ CORRECT
-const date = ['d', Math.floor(Date.now() / 1000)]; // seconds
-```
-
-**Key Source Files:**
-- `app/common/gristTypes.ts:196-213` - Type validators
-- `app/common/gristTypes.ts:360-367` - isBlankValue function
+**Source**: `app/plugin/GristData.ts:1-18`
 
 ---
 
-## Widget Options by Column Type
+## Widget Options
 
-Widget options control display formatting and behavior. They are **stored as JSON strings** in the database.
+Widget options control display formatting. **MUST be JSON strings** when stored.
 
 ### Universal Options (All Types)
 
 ```typescript
 {
-  alignment?: 'left' | 'center' | 'right',  // Cell text alignment
+  alignment?: 'left' | 'center' | 'right',  // Cell alignment
   textColor?: string,                        // CSS color (e.g., '#FF0000')
-  fillColor?: string,                        // Background CSS color
-  wrap?: true | false | undefined            // Text wrapping
+  fillColor?: string,                        // Background color
+  wrap?: boolean                             // Text wrapping
 }
 ```
 
-**Note:** The `WidgetOptions` interface in `app/common/WidgetOptions.ts:4-5` has a TypeScript bug where `textColor` and `fillColor` are typed as the literal `'string'` instead of the type `string`. This documentation shows the correct semantic types. The runtime behavior treats these as `string` values (CSS colors).
+**TypeScript Bug Note**: The `WidgetOptions` interface in `app/common/WidgetOptions.ts:4-5` incorrectly types `textColor` and `fillColor` as the literal string `'string'` instead of the type `string`. Runtime behavior is correct (treats as `string`).
+
+---
 
 ### Numeric Options (Numeric, Int)
 
 ```typescript
 {
-  numMode: 'currency' | 'decimal' | 'percent' | 'scientific' | undefined,
-  numSign: 'parens' | undefined,   // Use (123) for negative numbers
-  decimals: number,                 // Min fraction digits (0-20)
-  maxDecimals: number,              // Max fraction digits (0-20)
-  currency: string                  // ISO 4217 code, e.g., 'USD' (requires numMode: 'currency')
+  numMode?: 'currency' | 'decimal' | 'percent' | 'scientific',
+  numSign?: 'parens',      // Use (123) for negatives
+  decimals?: number,       // Min fraction digits (0-20)
+  maxDecimals?: number,    // Max fraction digits (0-20)
+  currency?: string        // ISO 4217 code (e.g., 'USD')
 }
 ```
 
-**Example:**
+**Example**:
 ```typescript
 {
   numMode: 'currency',
@@ -220,95 +485,96 @@ Widget options control display formatting and behavior. They are **stored as JSO
 // Displays: $1,234.56
 ```
 
+**Source**: `app/common/NumberFormat.ts:28-38`
+
+---
+
 ### Date/DateTime Options
 
 ```typescript
 {
-  dateFormat: string,              // moment.js format (default: 'YYYY-MM-DD')
-  timeFormat: string,              // moment.js format (default: 'h:mma') [DateTime only]
-  isCustomDateFormat: boolean,     // Whether using custom format
-  isCustomTimeFormat: boolean      // Whether using custom time format [DateTime only]
+  dateFormat?: string,           // moment.js format (default: 'YYYY-MM-DD')
+  timeFormat?: string,           // moment.js format (default: 'h:mma') [DateTime only]
+  isCustomDateFormat?: boolean,  // Using custom format
+  isCustomTimeFormat?: boolean   // Using custom time format [DateTime only]
 }
 ```
 
-**Common Date Formats:**
-- `'YYYY-MM-DD'` → 2024-01-10
-- `'MM/DD/YYYY'` → 01/10/2024
-- `'DD/MM/YYYY'` → 10/01/2024
-- `'MMMM D, YYYY'` → January 10, 2024
+**Common Formats**:
+- Date: `'YYYY-MM-DD'`, `'MM/DD/YYYY'`, `'DD/MM/YYYY'`, `'MMMM D, YYYY'`
+- Time: `'h:mma'`, `'HH:mm:ss'`, `'h:mm A'`
 
-**Common Time Formats:**
-- `'h:mma'` → 3:45pm
-- `'HH:mm:ss'` → 15:45:30
-- `'h:mm A'` → 3:45 PM
+---
 
 ### Choice/ChoiceList Options
 
 ```typescript
 {
-  choices: string[],                          // Available choice values
-  choiceOptions: {
-    order: 'custom' | 'alphabetical'         // Sort order
+  choices?: string[],           // Available choices
+  choiceOptions?: {
+    [choice: string]: {
+      fillColor?: string,       // Background color
+      textColor?: string        // Text color
+    }
   }
 }
 ```
 
-**Example:**
+**Example**:
 ```typescript
 {
   choices: ['Red', 'Green', 'Blue'],
-  choiceOptions: { order: 'custom' }
+  choiceOptions: {
+    'Red': {fillColor: '#FF0000', textColor: '#FFFFFF'},
+    'Green': {fillColor: '#00FF00'}
+  }
 }
 ```
 
-### Reference Options (Ref, RefList)
-
-Reference columns **do not have their own widget options**. Display formatting is determined by:
-1. The `visibleCol` field (which column to use for lookups)
-2. The `displayCol` field (which column to display)
-3. Widget options come from the **referenced column**, not the reference column itself
-
-See "Reference Column Properties" section below.
+---
 
 ### Attachment Options
 
 ```typescript
 {
-  height: string   // Display height in pixels (e.g., '36')
+  height?: string  // Display height in pixels (e.g., '36')
 }
 ```
-
-### Text Options (Special Widgets)
-
-```typescript
-{
-  widget: 'HyperLink' | undefined   // Make text clickable as link
-}
-```
-
-### Serialization Warning ⚠️
-
-Widget options **MUST be JSON.stringify'd** when stored in the database:
-
-```typescript
-// ❌ WRONG
-column.widgetOptions = { numMode: 'currency', currency: 'USD' };
-
-// ✅ CORRECT
-column.widgetOptions = JSON.stringify({ numMode: 'currency', currency: 'USD' });
-```
-
-**Key Source Files:**
-- `app/common/WidgetOptions.ts:1-11` - WidgetOptions interface
-- `app/common/NumberFormat.ts:28-38` - Numeric options
-- `app/client/widgets/UserType.ts:38-308` - Default options per type
-- `app/client/models/entities/ViewFieldRec.ts:65-69` - widgetOptionsJson
 
 ---
 
-## Reference Column Properties
+### Text Options
 
-Reference columns (`Ref:TableName`, `RefList:TableName`) store row IDs but display values from other columns.
+```typescript
+{
+  widget?: 'HyperLink'  // Make text clickable
+}
+```
+
+---
+
+### Serialization Rules ⚠️
+
+**CRITICAL**: Widget options MUST be JSON.stringify'd:
+
+```typescript
+// ❌ WRONG
+column.widgetOptions = {numMode: 'currency', currency: 'USD'};
+
+// ✅ CORRECT
+column.widgetOptions = JSON.stringify({numMode: 'currency', currency: 'USD'});
+
+// Reading:
+const options = JSON.parse(column.widgetOptions || '{}');
+```
+
+**Source**: `app/common/WidgetOptions.ts:1-11`
+
+---
+
+## Reference Columns
+
+Reference columns (`Ref:Table`, `RefList:Table`) store row IDs but display values from other columns.
 
 ### How References Work
 
@@ -319,14 +585,14 @@ Ref column (stores)   →   visibleCol (lookup)   →   displayCol (display)
 
 ### Column Metadata Fields
 
-Stored in `_grist_Tables_column` table:
+**Stored in `_grist_Tables_column`**:
 
 ```typescript
 {
   type: "Ref:People",          // Column type with target table
-  visibleCol: 45,              // Row ID of column to use for lookups (e.g., 'name' column)
-  displayCol: 47,              // Row ID of column to display (e.g., 'fullName' formula column)
-  widgetOptions: "{...}"       // JSON (usually empty for Ref columns)
+  visibleCol: 45,              // Row ID of column for lookups (e.g., 'name')
+  displayCol: 47,              // Row ID of column for display (e.g., 'fullName' formula)
+  widgetOptions: "{}"          // Usually empty for Ref columns
 }
 ```
 
@@ -334,12 +600,12 @@ Stored in `_grist_Tables_column` table:
 
 | Field | Purpose | Example | When Different |
 |-------|---------|---------|----------------|
-| **visibleCol** | Column to match user input against | `name` column | User types "John" to find record |
+| **visibleCol** | Column to match user input | `name` column | User types "John" to find record |
 | **displayCol** | Column to display in cell | `fullName` formula | Display "John Smith" (computed) |
 
-**Common Pattern:**
-- **Simple case**: `visibleCol` and `displayCol` are the same (e.g., both point to `name`)
-- **Computed display**: `visibleCol` = `name`, `displayCol` = formula like `$firstName + " " + $lastName`
+**Common Patterns**:
+- **Simple**: Both point to same column (e.g., both = `name`)
+- **Computed**: `visibleCol` = `name`, `displayCol` = formula column
 
 ### Field Overrides
 
@@ -348,39 +614,28 @@ View fields (in `_grist_Views_section_field`) can override column defaults:
 ```typescript
 {
   colRef: 35,           // Column being displayed
-  visibleCol: 45,       // Override column's visibleCol (optional)
-  displayCol: 47        // Override column's displayCol (optional)
+  visibleCol: 45,       // Override (optional)
+  displayCol: 47        // Override (optional)
 }
 ```
 
-### Attachments Special Case
-
-Attachments is a special `RefList` type:
-- **Always** references `_grist_Attachments` system table
-- Each attachment is a row with metadata (filename, size, etc.)
-- Stored as: `['L', attachmentId1, attachmentId2, ...]`
-
-**Key Source Files:**
-- `app/common/schema.ts:29-47,128-138` - Column/field schema
-- `app/common/ValueParser.ts:121-213` - Reference parsing
-- `app/common/gristTypes.ts:59-60` - Attachments handling
+**Source**: `app/common/schema.ts:29-47,128-138`
 
 ---
 
-## Identifier Validation Rules
+## Identifier Validation
 
 ### TableId Rules
 
-**Validation** (from `sandbox/grist/identifiers.py`):
+**Validation** (`sandbox/grist/identifiers.py`):
 - Characters: `[a-zA-Z0-9_]+` (alphanumeric + underscore)
-- Must start with a **letter** (not digit or underscore)
+- **Must start with a letter** (not digit or underscore)
 - Auto-generated tables are **capitalized** (e.g., `Table1`, `People`)
 - Must not be a **Python keyword**
-- Case-insensitive uniqueness (e.g., `Users` and `users` conflict)
+- Case-insensitive uniqueness
 
 **Auto-generation**:
 ```python
-# Pattern: Capitalize first letter, add suffix if needed
 "people" → "People"
 "user data" → "UserData"
 "123" → "T123"
@@ -388,20 +643,36 @@ Attachments is a special `RefList` type:
 ```
 
 **Reserved Prefixes**:
-- `_grist_*` - System metadata tables (e.g., `_grist_Tables`)
+- `_grist_*` - System metadata tables
 - `GristHidden_*` - User-created hidden tables
+
+**Examples**:
+```typescript
+// ❌ INVALID
+"class"      // Python keyword
+"for"        // Python keyword
+"_private"   // Starts with underscore
+"123Table"   // Starts with digit
+
+// ✅ VALID
+"Class"
+"For"
+"my_class"
+"Table123"
+```
+
+---
 
 ### ColId Rules
 
-**Validation** (from `sandbox/grist/identifiers.py`):
+**Validation**:
 - Characters: `[a-zA-Z0-9_]+`
-- Must start with a **letter** (not digit or underscore)
+- **Must start with a letter**
 - Must not be a **Python keyword**
 - Case-insensitive uniqueness within table
 
 **Auto-generation**:
 ```python
-# Pattern: Lowercase, prepend 'c' if needed, Excel-style (A, B, ..., Z, AA, AB)
 "name" → "name"
 "first name" → "first_name"
 "123" → "c123"
@@ -409,9 +680,11 @@ Attachments is a special `RefList` type:
 ```
 
 **Reserved Names**:
-- `gristHelper_*` - System-generated helper columns
-- `manualSort` - Manual sort order column
-- `id` - Row ID column (always present)
+- `gristHelper_*` - System helper columns
+- `manualSort` - Manual sort position
+- `id` - Row ID column
+
+---
 
 ### Python Keywords (Must Avoid)
 
@@ -421,79 +694,40 @@ def, del, elif, else, except, finally, for, from, global, if, import, in,
 is, lambda, nonlocal, not, or, pass, raise, return, try, while, with, yield
 ```
 
-**Example Conflicts**:
-```python
-# ❌ INVALID
-"class" → "c_class"  # 'class' is a keyword
-"for" → "c_for"      # 'for' is a keyword
-"_private" → "c_private"  # starts with underscore
-
-# ✅ VALID
-"Class" → "Class"
-"For" → "For"
-"my_class" → "my_class"
-```
-
-### DocId Format
-
-- No strict validation in application code
-- Typically UUID or human-readable identifier
-- Format depends on deployment (SQLite, PostgreSQL, etc.)
-
-**Key Source Files:**
-- `sandbox/grist/identifiers.py:14-127` - All identifier validation
-- `app/common/gristTypes.ts:14-19` - Hidden column detection
-- `app/common/isHiddenTable.ts` - Hidden table detection
+**Source**: `sandbox/grist/identifiers.py:14-127`
 
 ---
 
-## Null Handling by Type
+## Null Handling
 
-**Note:** This section describes null/empty value handling. For default values inserted into new records, see the "Default vs Null Values" section in Quick Reference above.
+### Null/Empty Values by Type
 
-| Type | Null Input | Stored As | Output | Display | Notes |
-|------|-----------|-----------|--------|---------|-------|
-| **Text** | `null` | `null` | `null` | Empty cell | |
-| **Numeric** | `null` | `null` | `null` | Empty cell | |
-| **Int** | `null` | `null` | `null` | Empty cell | |
-| **Bool** | `null` | `null` | `null` | Empty cell | |
-| **Date** | `null` | `null` | `null` | Empty cell | |
-| **DateTime** | `null` | `null` | `null` | Empty cell | |
-| **Choice** | `null` | `''` | `''` | Empty/first choice | ⚠️ Empty string, not null |
-| **ChoiceList** | `null` | `null` | `null` | Empty cell | `['L']` also valid |
-| **Ref** | `null` | `0` | `0` | Empty cell | ⚠️ **Zero, not null!** |
-| **RefList** | `null` | `null` | `null` | Empty cell | `['L']` also valid |
-| **Attachments** | `null` | `null` | `null` | Empty cell | |
-| **Any** | `null` | `null` | `null` | Empty cell | |
+| Type | Null Input | Stored | Output | Display |
+|------|-----------|--------|--------|---------|
+| Text | `null` | `null` | `null` | Empty cell |
+| Numeric | `null` | `null` | `null` | Empty cell |
+| Int | `null` | `null` | `null` | Empty cell |
+| Bool | `null` | `null` | `null` | Empty cell |
+| Date | `null` | `null` | `null` | Empty cell |
+| DateTime | `null` | `null` | `null` | Empty cell |
+| Choice | `null` | `''` | `''` | Empty cell |
+| ChoiceList | `null` | `null` | `null` or `['L']` | Empty cell |
+| **Ref** | `null` | **`0`** | **`0`** | Empty cell ⚠️ |
+| RefList | `null` | `null` | `null` or `['L']` | Empty cell |
+| Attachments | `null` | `null` | `null` or `['L']` | Empty cell |
 
 ### Blank Value Detection
 
 `isBlankValue()` considers these as "blank":
+
 ```typescript
-// From gristTypes.ts:360-367
 null
 ""           // Empty string (after trim)
 ['L']        // Empty list
 ['r', 'Table', []]  // Empty reference list
 ```
 
-### Conversion Rules
-
-```typescript
-// Ref → RefList
-0 → null         // No ref becomes no refs
-
-// RefList → Ref
-null → 0         // No refs becomes no ref
-['L'] → 0        // Empty list becomes no ref
-['L', 17] → 17   // Single ref extracted
-['L', 1, 2] → "1, 2"  // Multiple refs become text (error)
-```
-
-**Key Source Files:**
-- `app/common/gristTypes.ts:22-42` - Default values
-- `app/common/gristTypes.ts:360-367` - isBlankValue
-- `app/common/ValueConverter.ts:218-263` - Conversion with nulls
+**Source**: `app/common/gristTypes.ts:360-367`
 
 ---
 
@@ -513,39 +747,39 @@ if (cellValue === 0) {
 }
 ```
 
-**Why:** Grist uses `0` as the sentinel value for empty references to maintain consistency with row IDs (which start at 1).
+**Why**: Grist uses `0` as the sentinel value for empty references (row IDs start at 1).
 
 ---
 
-### 2. **RefList Uses `'L'` Marker, Ref Does Not**
+### 2. **RefList Uses `'L'` Marker, Ref Does NOT**
 
 ```typescript
 // ❌ WRONG
-const refValue = ['R', 123];           // Ref stored as tuple
-const refListValue = [1, 2, 3];         // RefList as plain array
+const refValue = ['R', 123];           // Ref NOT encoded in storage
+const refListValue = [1, 2, 3];        // RefList needs marker
 
 // ✅ CORRECT
-const refValue = 123;                   // Ref is plain row ID
-const refListValue = ['L', 1, 2, 3];   // RefList needs 'L' marker
+const refValue = 123;                  // Ref is plain row ID
+const refListValue = ['L', 1, 2, 3];  // RefList needs 'L'
 ```
 
 ---
 
-### 3. **Empty Lists Can Be `['L']` OR `null`**
+### 3. **Empty Lists: `['L']` OR `null` (Both Valid)**
 
 ```typescript
-// Both are valid empty lists:
+// BOTH valid empty lists:
 const empty1 = null;
-const empty2 = ['L'];  // Length 1, just the marker
+const empty2 = ['L'];  // Length 1, just marker
 
-// ❌ WRONG - these are NOT valid empty lists:
-const wrong1 = [];
-const wrong2 = ['L', null];
+// ❌ WRONG
+const wrong1 = [];           // Plain empty array not valid
+const wrong2 = ['L', null];  // Null inside list not valid
 ```
 
 ---
 
-### 4. **Dates Use Seconds, Not Milliseconds**
+### 4. **Dates/DateTimes Use SECONDS, Not Milliseconds**
 
 ```typescript
 // ❌ WRONG
@@ -557,19 +791,14 @@ const date = ['d', Math.floor(Date.now() / 1000)];  // seconds
 
 ---
 
-### 5. **Widget Options Must Be JSON.stringify'd**
+### 5. **widgetOptions Must Be JSON.stringify'd**
 
 ```typescript
 // ❌ WRONG
-column.widgetOptions = { numMode: 'currency', currency: 'USD' };
+column.widgetOptions = {numMode: 'currency', currency: 'USD'};
 
 // ✅ CORRECT
-column.widgetOptions = JSON.stringify({ numMode: 'currency', currency: 'USD' });
-```
-
-**Reading:**
-```typescript
-const options = JSON.parse(column.widgetOptions || '{}');
+column.widgetOptions = JSON.stringify({numMode: 'currency', currency: 'USD'});
 ```
 
 ---
@@ -580,7 +809,7 @@ const options = JSON.parse(column.widgetOptions || '{}');
 // ❌ WRONG - trying to set format on Ref column
 {
   type: 'Ref:People',
-  widgetOptions: JSON.stringify({ dateFormat: 'YYYY-MM-DD' })  // Ignored!
+  widgetOptions: JSON.stringify({dateFormat: 'YYYY-MM-DD'})  // Ignored!
 }
 
 // ✅ CORRECT - format the REFERENCED column instead
@@ -593,17 +822,21 @@ const options = JSON.parse(column.widgetOptions || '{}');
 
 ---
 
-### 7. **ChoiceList Parsing: Strings Aren't Auto-Split**
+### 7. **visibleCol Placement: Top-Level, NOT in widgetOptions**
 
 ```typescript
-// Converting from Text to ChoiceList:
+// ❌ WRONG
+{
+  type: 'Ref:People',
+  widgetOptions: JSON.stringify({visibleCol: 25})  // WRONG!
+}
 
-// ❌ WRONG - assumes comma splitting happens automatically
-"Red, Green, Blue"  → ['L', 'Red, Green, Blue']  // Single choice!
-
-// ✅ CORRECT - parse explicitly if needed
-const parser = createParser('ChoiceList', options);
-parser.parse("Red, Green, Blue")  → ['L', 'Red', 'Green', 'Blue']
+// ✅ CORRECT
+{
+  type: 'Ref:People',
+  visibleCol: 25,  // Top-level field
+  widgetOptions: "{}"
+}
 ```
 
 ---
@@ -649,23 +882,10 @@ columns: ['Name', 'Email']
 
 ---
 
-### 11. **Hidden Columns/Tables Need Special Prefixes**
+### 11. **Date Columns Store UTC Midnight**
 
 ```typescript
-// To hide a column:
-colId: 'gristHelper_Display'  // Hidden from UI
-
-// To hide a table:
-tableId: 'GristHidden_Temp'   // User-created hidden table
-tableId: '_grist_Custom'      // System table (reserved)
-```
-
----
-
-### 12. **Date Columns Store Days as Seconds (UTC Midnight)**
-
-```typescript
-// Date column value represents UTC midnight:
+// Date column represents UTC midnight:
 ['d', 1704844800]  // 2024-01-10 00:00:00 UTC
 
 // ❌ WRONG - using local midnight
@@ -679,24 +899,25 @@ const utcMidnight = Date.UTC(2024, 0, 10) / 1000;
 
 ## Summary Checklist
 
-When implementing Grist integrations, remember:
+When implementing Grist integrations:
 
 - [ ] Use `0` for null Ref values (not `null`)
 - [ ] Use `['L', ...]` for RefList and ChoiceList
+- [ ] Empty lists can be `null` OR `['L']` (both valid)
 - [ ] Store dates/times as **seconds** (not milliseconds)
 - [ ] JSON.stringify widget options before storing
 - [ ] Include table name in Ref/RefList types (`Ref:TableName`)
 - [ ] Use Python identifier rules for TableId/ColId
 - [ ] Avoid Python keywords in identifiers
 - [ ] Check for case-insensitive uniqueness
-- [ ] Empty lists can be `null` or `['L']`
 - [ ] Reference columns inherit formatting from visibleCol
+- [ ] visibleCol is top-level, NOT in widgetOptions
 
 ---
 
 ## Additional Resources
 
-**Key Source Files:**
+**Key Source Files**:
 - `app/plugin/GristData.ts` - Core type definitions
 - `app/common/gristTypes.ts` - Type utilities and validation
 - `sandbox/grist/identifiers.py` - Identifier validation
@@ -704,9 +925,8 @@ When implementing Grist integrations, remember:
 - `app/common/ValueFormatter.ts` - Display formatting
 - `app/common/ValueParser.ts` - Input parsing
 - `app/common/WidgetOptions.ts` - Widget option types
-- `documentation/grist-data-format.md` - Data format specification
 
-**Schema Tables:**
+**Schema Tables**:
 - `_grist_Tables` - Table metadata
 - `_grist_Tables_column` - Column definitions
 - `_grist_Views_section_field` - View field configuration
@@ -714,4 +934,5 @@ When implementing Grist integrations, remember:
 
 ---
 
-*This reference was generated from Grist source code analysis. For the latest information, consult the source files listed above.*
+**Last Updated**: 2025-11-15  
+**Maintainer**: Grist Labs (https://github.com/gristlabs/grist-core)

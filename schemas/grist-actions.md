@@ -1,58 +1,189 @@
-# Grist UserActions Reference
+# Grist Actions Complete Reference
 
-## Overview
+**The definitive guide to Grist UserActions** - high-level operations for modifying Grist documents programmatically.
 
-### What are UserActions?
+**Total Actions**: 43 | **Source**: `sandbox/grist/useractions.py`
 
-UserActions are the primary way to programmatically modify Grist documents through the API. They represent high-level operations like adding tables, modifying columns, or updating records. Each UserAction is an array with the action name as the first element, followed by parameters specific to that action.
+---
+
+## Quick Start
 
 ### The /apply Endpoint
 
 **Endpoint**: `POST /api/docs/:docId/apply`
 
-**Critical Format Requirements**:
-- **Send the actions array directly** in the request body
-- ❌ **WRONG**: `{"actions": [['AddTable', ...]]}`
-- ✅ **CORRECT**: `[['AddTable', 'MyTable', [...]]]`
+**Critical Format**: Send actions array directly in request body
 
-The endpoint accepts either:
-- A single UserAction: `['AddTable', 'MyTable', [...]]`
-- An array of UserActions: `[['AddTable', 'MyTable', [...]], ['BulkAddRecord', 'MyTable', ...]]`
-
-**Query Parameters**:
-- `noparse=1`: Skip automatic string parsing (defaults to parsing strings as dates, numbers, etc.)
-
-**Implementation**: `/home/user/grist-core/app/server/lib/DocApi.ts:258-261`
-
-### UserAction Format
-
-All UserActions follow this structure:
 ```typescript
-[ActionName: string, ...parameters: any[]]
+// ✅ CORRECT
+[['AddTable', 'MyTable', [...]]]
+
+// ❌ WRONG
+{"actions": [['AddTable', ...]]}
 ```
 
-Example:
-```typescript
-['AddColumn', 'People', 'age', {type: 'Numeric', isFormula: false}]
+**Parameters**:
+- `noparse=1`: Skip automatic string parsing (dates, numbers, etc.)
+
+**Examples**:
+
+Single action:
+```bash
+curl -X POST https://api.getgrist.com/api/docs/DOCID/apply \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[["AddRecord", "Table1", null, {"Name": "Alice"}]]'
 ```
 
-### Column-Oriented Data Format
+Multiple actions:
+```bash
+curl -X POST https://api.getgrist.com/api/docs/DOCID/apply \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[
+    ["AddTable", "People", [{"id": "name", "type": "Text", "isFormula": false}]],
+    ["BulkAddRecord", "People", [null, null], {"name": ["Alice", "Bob"]}]
+  ]'
+```
 
-Bulk operations (BulkAddRecord, BulkUpdateRecord) use a **column-oriented** format:
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Type Definitions](#type-definitions)
+- [Common Patterns](#common-patterns)
+- [Table Actions](#table-actions)
+- [Record Actions](#record-actions)
+- [Column Actions](#column-actions)
+- [View Actions](#view-actions)
+- [Document Actions](#document-actions)
+- [Common Pitfalls](#common-pitfalls)
+- [Complete Action Index](#complete-action-index)
+
+---
+
+## Type Definitions
+
+### Core Types
 
 ```typescript
-{
-  colId1: [value1, value2, value3],
-  colId2: [value1, value2, value3]
+/**
+ * Cell value - any JSON-serializable value or encoded tuple
+ */
+type CellValue = null | boolean | number | string | [string, ...any[]];
+
+/**
+ * Column values for a single record
+ */
+interface ColValues {
+  [colId: string]: CellValue;
+}
+
+/**
+ * Column values for multiple records (column-oriented)
+ */
+interface BulkColValues {
+  [colId: string]: CellValue[];
+}
+
+/**
+ * Column configuration
+ */
+interface ColInfo {
+  type?: string;          // "Text", "Numeric", "Ref:TableName", etc.
+  isFormula?: boolean;    // true for formula columns
+  formula?: string;       // Python expression
+  widgetOptions?: string; // JSON string
+  label?: string;         // Display label
+  visibleCol?: number;    // Visible column ref (for Ref/RefList)
+  recalcWhen?: number;    // Recalculation trigger
+  recalcDeps?: number[];  // Recalc dependencies
+}
+
+/**
+ * Column with ID (for AddTable)
+ */
+interface ColInfoWithId extends ColInfo {
+  id: string;
+}
+
+/**
+ * Upsert options
+ */
+interface UpsertOptions {
+  onMany?: "first" | "all" | "none";  // Which records to update when multiple match
+  update?: boolean;                    // Allow updating (default: true)
+  add?: boolean;                       // Allow adding (default: true)
+  allowEmptyRequire?: boolean;         // Allow empty require (default: false)
 }
 ```
 
-**NOT row-oriented** (this won't work):
+### Column-Oriented Format
+
+**CRITICAL**: Bulk operations use column-oriented format:
+
 ```typescript
-// ❌ WRONG
+// ✅ CORRECT - Column-oriented
+{
+  name: ["Alice", "Bob", "Charlie"],
+  age: [30, 25, 35]
+}
+
+// ❌ WRONG - Row-oriented (NOT supported)
 [
-  {colId1: value1, colId2: value1},
-  {colId1: value2, colId2: value2}
+  {name: "Alice", age: 30},
+  {name: "Bob", age: 25}
+]
+```
+
+---
+
+## Common Patterns
+
+### Creating a Table with Data
+
+```typescript
+[
+  // 1. Create table structure
+  ['AddTable', 'People', [
+    {id: 'name', type: 'Text', isFormula: false},
+    {id: 'email', type: 'Text', isFormula: false},
+    {id: 'age', type: 'Numeric', isFormula: false}
+  ]],
+
+  // 2. Add data
+  ['BulkAddRecord', 'People', [null, null, null], {
+    name: ['Alice', 'Bob', 'Charlie'],
+    email: ['alice@example.com', 'bob@example.com', 'charlie@example.com'],
+    age: [30, 25, 35]
+  }]
+]
+```
+
+### Adding a Reference Column
+
+```typescript
+// Assume People table has a 'name' column with ID 25
+[
+  ['AddColumn', 'Orders', 'customer', {
+    type: 'Ref:People',
+    isFormula: false,
+    visibleCol: 25  // Points to People.name
+  }]
+]
+```
+
+### Upsert Pattern
+
+```typescript
+['BulkAddOrUpdateRecord', 'Users',
+  // Lookup criteria
+  {email: ['alice@example.com', 'bob@example.com']},
+  // Values to set
+  {name: ['Alice Smith', 'Bob Jones'], status: ['active', 'active']},
+  // Options
+  {onMany: 'first', update: true, add: true}
 ]
 ```
 
@@ -62,29 +193,30 @@ Bulk operations (BulkAddRecord, BulkUpdateRecord) use a **column-oriented** form
 
 ### AddTable
 
-Creates a new table with columns and associated views.
+Creates a new table with columns and views.
 
 **Signature**: `['AddTable', tableId, columns]`
 
-**Parameters**:
-- `tableId` (string): Table identifier. Must be valid Python identifier (no spaces, no keywords like 'class', 'import', etc.)
-- `columns` (array): Array of column definitions
+| Parameter | Type | Description | Required |
+|-----------|------|-------------|----------|
+| tableId | string | Table identifier (valid Python identifier) | ✓ |
+| columns | ColInfoWithId[] | Array of column definitions | ✓ |
 
-**Column Definition Structure**:
+**Column Definition**:
 ```typescript
 {
-  id?: string,           // Column ID (optional, auto-generated if null)
-  type?: string,         // Column type (default: 'Any' for formula cols, 'Text' for data cols)
-  isFormula?: boolean,   // Default: true (but AddTable sets to bool(formula) if not specified)
-  formula?: string,      // Python expression (default: '')
-  label?: string,        // Display label (default: same as id)
-  widgetOptions?: string // JSON string for widget configuration
+  id: string,            // Column ID
+  type?: string,         // Default: 'Any' (formula), 'Text' (data)
+  isFormula?: boolean,   // Default: bool(formula)
+  formula?: string,      // Default: ''
+  label?: string,        // Default: same as id
+  widgetOptions?: string // JSON string
 }
 ```
 
 **Examples**:
 
-Basic table with text columns:
+Basic table:
 ```typescript
 ['AddTable', 'People', [
   {id: 'name', type: 'Text', isFormula: false},
@@ -92,7 +224,7 @@ Basic table with text columns:
 ]]
 ```
 
-Table with formula column:
+With formula column:
 ```typescript
 ['AddTable', 'Orders', [
   {id: 'quantity', type: 'Numeric', isFormula: false},
@@ -101,55 +233,11 @@ Table with formula column:
 ]]
 ```
 
-Minimal column definition (auto-generates IDs):
-```typescript
-['AddTable', 'Tasks', [
-  {id: null, isFormula: true},
-  {id: null, isFormula: true},
-  {id: null, isFormula: true}
-]]
-```
+**Returns**: `{id: number, table_id: string, columns: string[], views: any[]}`
 
-**Common Errors**:
-- ❌ Using Python keywords: `['AddTable', 'class', ...]` → Use `Classes` or `Class_`
-- ❌ Spaces in table ID: `['AddTable', 'My Table', ...]` → Use `My_Table` or `MyTable`
-- ❌ Missing columns array: `['AddTable', 'People']` → Must provide columns array
+**Source**: `sandbox/grist/useractions.py:2017`
 
-### RemoveTable
-
-Removes a table and all associated data, views, and columns.
-
-**Signature**: `['RemoveTable', tableId]`
-
-**Parameters**:
-- `tableId` (string): Table to remove
-
-**Example**:
-```typescript
-['RemoveTable', 'OldData']
-```
-
-**Common Errors**:
-- ❌ Cannot remove system tables starting with `_grist_`
-
-### RenameTable
-
-Renames a table and updates all references in formulas.
-
-**Signature**: `['RenameTable', oldTableId, newTableId]`
-
-**Parameters**:
-- `oldTableId` (string): Current table ID
-- `newTableId` (string): New table ID (must be valid Python identifier)
-
-**Example**:
-```typescript
-['RenameTable', 'Person', 'People']
-```
-
-**Common Errors**:
-- ❌ New ID is Python keyword: `['RenameTable', 'Data', 'class']`
-- ❌ Table doesn't exist: Returns error
+---
 
 ### AddEmptyTable
 
@@ -162,6 +250,12 @@ Creates a table with 3 empty formula columns (A, B, C).
 ['AddEmptyTable', 'NewTable']
 ```
 
+**Returns**: Same as AddTable
+
+**Source**: `sandbox/grist/useractions.py:2007`
+
+---
+
 ### AddRawTable
 
 Creates a table without a primary view (no page created).
@@ -170,70 +264,123 @@ Creates a table without a primary view (no page created).
 
 **Example**:
 ```typescript
-['AddRawTable', 'DataImport']
+['AddRawTable', 'TempImport']
 ```
+
+**Returns**: `{id: number, table_id: string, columns: string[]}`
+
+**Source**: `sandbox/grist/useractions.py:2028`
+
+---
+
+### RemoveTable
+
+Removes a table and all associated data.
+
+**Signature**: `['RemoveTable', tableId]`
+
+**Example**:
+```typescript
+['RemoveTable', 'OldData']
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:2123`
+
+---
+
+### RenameTable
+
+Renames a table and updates formula references.
+
+**Signature**: `['RenameTable', oldTableId, newTableId]`
+
+**Example**:
+```typescript
+['RenameTable', 'Person', 'People']
+```
+
+**Returns**: `string` - The actual new table ID (sanitized if needed)
+
+**Source**: `sandbox/grist/useractions.py:2131`
+
+---
 
 ### DuplicateTable
 
-Duplicates an existing table's structure and optionally its data.
+Duplicates table structure and optionally data.
 
 **Signature**: `['DuplicateTable', existingTableId, newTableId, includeData]`
 
-**Parameters**:
-- `existingTableId` (string): Source table to duplicate
-- `newTableId` (string): New table name
-- `includeData` (boolean): If true, copies all records; if false, only structure
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| existingTableId | string | Source table |
+| newTableId | string | New table name |
+| includeData | boolean | Copy data (true) or structure only (false) |
 
 **Examples**:
 
-Duplicate structure only:
+Structure only:
 ```typescript
-['DuplicateTable', 'Orders', 'Orders_Backup', false]
+['DuplicateTable', 'Orders', 'Orders_Template', false]
 ```
 
-Duplicate with data:
+With data:
 ```typescript
 ['DuplicateTable', 'Products', 'Products_Archive', true]
 ```
 
-**Behavior**:
-- Copies all columns with their types and formulas
-- Copies view section options and descriptions
-- Updates self-referencing columns to point to new table
-- Preserves widgetOptions and visibleCol settings
-- Cannot duplicate hidden tables or summary tables
+**Returns**: `{id: number, table_id: string, raw_section_id: number}`
 
-**Common Errors**:
-- ❌ Cannot duplicate hidden tables: `['DuplicateTable', 'GristHidden_import', ...]`
-- ❌ Cannot duplicate summary tables
+**Restrictions**: Cannot duplicate hidden or summary tables
+
+**Source**: `sandbox/grist/useractions.py:2140`
 
 ---
 
 ## Record Actions
 
-### BulkAddRecord
+### AddRecord
 
-Adds multiple records to a table in a single operation.
+Adds a single record.
 
-**Signature**: `['BulkAddRecord', tableId, rowIds, colValues]`
+**Signature**: `['AddRecord', tableId, rowId, columnValues]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `rowIds` (array): Array of row IDs. Use `null` for auto-generation, or positive integers
-- `colValues` (object): Column-oriented value dict
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| rowId | number \| null | Row ID (use null for auto) |
+| columnValues | ColValues | Column values |
 
-**Column Values Structure**:
+**Example**:
 ```typescript
-{
-  columnId1: [val1, val2, val3, ...],
-  columnId2: [val1, val2, val3, ...]
-}
-// All arrays must have the same length as rowIds
+['AddRecord', 'People', null, {
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 30
+}]
 ```
 
-**Examples**:
+**Returns**: `number` - The row ID
 
-Auto-generated row IDs:
+**Source**: `sandbox/grist/useractions.py:383`
+
+---
+
+### BulkAddRecord
+
+Adds multiple records efficiently.
+
+**Signature**: `['BulkAddRecord', tableId, rowIds, columnValues]`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| rowIds | (number \| null)[] | Row IDs (null = auto) |
+| columnValues | BulkColValues | Column-oriented values |
+
+**Example**:
 ```typescript
 ['BulkAddRecord', 'People', [null, null, null], {
   name: ['Alice', 'Bob', 'Charlie'],
@@ -242,50 +389,22 @@ Auto-generated row IDs:
 }]
 ```
 
-Specific row IDs:
-```typescript
-['BulkAddRecord', 'Products', [100, 101, 102], {
-  name: ['Widget', 'Gadget', 'Doohickey'],
-  price: [9.99, 19.99, 14.99]
-}]
-```
+**Returns**: `number[]` - Array of row IDs
 
-Empty record:
-```typescript
-['BulkAddRecord', 'Tasks', [null], {
-  title: ['New Task']
-}]
-```
+**Column-Oriented Format**:
+- All arrays must have same length as rowIds
+- Keys are column IDs
+- Values are arrays of cell values
 
-**Common Errors**:
-- ❌ Mismatched array lengths:
-  ```typescript
-  // rowIds has 3 elements, but name has 2
-  ['BulkAddRecord', 'People', [null, null, null], {
-    name: ['Alice', 'Bob']  // ❌ Length mismatch!
-  }]
-  ```
-- ❌ Row-oriented format:
-  ```typescript
-  // ❌ WRONG - not column-oriented
-  ['BulkAddRecord', 'People', [null, null], [
-    {name: 'Alice', age: 30},
-    {name: 'Bob', age: 25}
-  ]]
-  ```
-- ❌ Row IDs too high: `[1000001]` → Max is 1,000,000
-- ❌ Negative row IDs (except as references within same bundle)
+**Source**: `sandbox/grist/useractions.py:389`
+
+---
 
 ### UpdateRecord
 
 Updates a single record.
 
-**Signature**: `['UpdateRecord', tableId, rowId, colValues]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `rowId` (number): Row ID to update
-- `colValues` (object): Key-value pairs of columns to update
+**Signature**: `['UpdateRecord', tableId, rowId, columnValues]`
 
 **Example**:
 ```typescript
@@ -295,16 +414,17 @@ Updates a single record.
 }]
 ```
 
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:557`
+
+---
+
 ### BulkUpdateRecord
 
-Updates multiple records.
+Updates multiple records efficiently.
 
-**Signature**: `['BulkUpdateRecord', tableId, rowIds, colValues]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `rowIds` (array): Array of row IDs to update
-- `colValues` (object): Column-oriented value dict (same structure as BulkAddRecord)
+**Signature**: `['BulkUpdateRecord', tableId, rowIds, columnValues]`
 
 **Example**:
 ```typescript
@@ -314,8 +434,11 @@ Updates multiple records.
 }]
 ```
 
-**Common Errors**:
-- ❌ Array length mismatch between rowIds and column value arrays
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:562`
+
+---
 
 ### RemoveRecord
 
@@ -323,14 +446,16 @@ Removes a single record.
 
 **Signature**: `['RemoveRecord', tableId, rowId]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `rowId` (number): Row ID to remove
-
 **Example**:
 ```typescript
 ['RemoveRecord', 'People', 42]
 ```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1178`
+
+---
 
 ### BulkRemoveRecord
 
@@ -338,22 +463,24 @@ Removes multiple records.
 
 **Signature**: `['BulkRemoveRecord', tableId, rowIds]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `rowIds` (array): Array of row IDs to remove
-
 **Example**:
 ```typescript
 ['BulkRemoveRecord', 'OldRecords', [1, 5, 10, 15, 20]]
 ```
 
+**Returns**: `void`
+
+**Cleanup**: Automatically cleans up references to deleted rows
+
+**Source**: `sandbox/grist/useractions.py:1182`
+
+---
+
 ### ReplaceTableData
 
-Replaces all data in a table (clears existing data and adds new rows).
+Replaces all data in a table.
 
-**Signature**: `['ReplaceTableData', tableId, rowIds, colValues]`
-
-**Parameters**: Same as BulkAddRecord
+**Signature**: `['ReplaceTableData', tableId, rowIds, columnValues]`
 
 **Example**:
 ```typescript
@@ -363,60 +490,52 @@ Replaces all data in a table (clears existing data and adds new rows).
 }]
 ```
 
+**Returns**: `void`
+
+**Behavior**: Removes existing data, then adds new rows
+
+**Source**: `sandbox/grist/useractions.py:397`
+
+---
+
 ### BulkAddOrUpdateRecord
 
-Performs "upsert" operations: adds or updates records based on matching criteria.
+Add or update records based on lookup criteria (upsert).
 
 **Signature**: `['BulkAddOrUpdateRecord', tableId, require, colValues, options]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `require` (object): Column-oriented dict of values to match existing records
-- `colValues` (object): Column-oriented dict of values to set
-- `options` (object): Behavior configuration
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| require | BulkColValues | Lookup criteria (columns to match) |
+| colValues | BulkColValues | Values to set |
+| options | UpsertOptions | Behavior configuration |
 
-**Options Structure**:
-```typescript
-{
-  update?: boolean,           // Allow updating existing records (default: true)
-  add?: boolean,              // Allow adding new records (default: true)
-  on_many?: string,           // How to handle multiple matches: 'first', 'none', 'all' (default: 'first')
-  allow_empty_require?: boolean  // Allow empty require dict (default: false)
-}
-```
+**Options**:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| onMany | "first" \| "all" \| "none" | "first" | How to handle multiple matches |
+| update | boolean | true | Allow updating existing records |
+| add | boolean | true | Allow adding new records |
+| allowEmptyRequire | boolean | false | Allow empty require dict |
 
 **Behavior**:
 - For each record, looks up existing records matching all fields in `require`
-- If found and `update=true`: updates matched record(s) with `colValues`
+- If found and `update=true`: updates matched record(s)
 - If not found and `add=true`: creates new record with `{...require, ...colValues}`
-- `on_many='first'`: Update only first match (default)
-- `on_many='all'`: Update all matching records
-- `on_many='none'`: Skip if multiple matches
 
 **Examples**:
 
-Upsert based on email (update if exists, add if not):
+Upsert by email:
 ```typescript
-['BulkAddOrUpdateRecord', 'People',
-  // require: match on these fields
-  {
-    email: ['alice@example.com', 'bob@example.com', 'charlie@example.com']
-  },
-  // colValues: update/add these fields
-  {
-    name: ['Alice Smith', 'Bob Jones', 'Charlie Brown'],
-    status: ['active', 'active', 'inactive']
-  },
-  // options
-  {
-    on_many: 'first',
-    update: true,
-    add: true
-  }
+['BulkAddOrUpdateRecord', 'Users',
+  {email: ['alice@example.com', 'bob@example.com']},
+  {name: ['Alice Smith', 'Bob Jones'], status: ['active', 'active']},
+  {onMany: 'first', update: true, add: true}
 ]
 ```
 
-Only add records that don't exist (no updates):
+Only add if not exists:
 ```typescript
 ['BulkAddOrUpdateRecord', 'Products',
   {sku: ['SKU001', 'SKU002']},
@@ -425,51 +544,39 @@ Only add records that don't exist (no updates):
 ]
 ```
 
-Only update existing records (no adds):
-```typescript
-['BulkAddOrUpdateRecord', 'Inventory',
-  {sku: ['SKU001', 'SKU002']},
-  {quantity: [100, 200]},
-  {update: true, add: false}
-]
-```
-
-Update all matching records:
+Update all matching:
 ```typescript
 ['BulkAddOrUpdateRecord', 'Tasks',
-  {status: ['pending']},  // All pending tasks
-  {status: ['in_progress']},  // Set to in_progress
-  {on_many: 'all', allow_empty_require: false}
+  {status: ['pending']},
+  {status: ['in_progress']},
+  {onMany: 'all'}
 ]
 ```
 
-**Common Errors**:
-- ❌ Empty require without flag: `require: {}, options: {}` → Set `allow_empty_require: true`
-- ❌ Mismatched array lengths between require and colValues
-- ❌ Non-unique values in require: Each combination must be unique
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1027`
+
+---
 
 ### AddOrUpdateRecord
 
-Single-record version of BulkAddOrUpdateRecord.
+Single-record upsert.
 
 **Signature**: `['AddOrUpdateRecord', tableId, require, colValues, options]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `require` (object): Key-value pairs to match existing record
-- `colValues` (object): Key-value pairs to set
-- `options` (object): Same as BulkAddOrUpdateRecord
-
 **Example**:
-
-Upsert a single user:
 ```typescript
 ['AddOrUpdateRecord', 'Users',
-  {email: 'alice@example.com'},      // Match on this
-  {name: 'Alice Smith', age: 30},    // Update/add these
-  {on_many: 'first'}
+  {email: 'alice@example.com'},
+  {name: 'Alice Smith', age: 30},
+  {onMany: 'first'}
 ]
 ```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1129`
 
 ---
 
@@ -477,41 +584,38 @@ Upsert a single user:
 
 ### AddColumn
 
-Adds a new column to a table.
+Adds a column to a table.
 
 **Signature**: `['AddColumn', tableId, colId, colInfo]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `colId` (string): Column identifier (must be valid Python identifier)
-- `colInfo` (object): Column configuration
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| colId | string \| null | Column ID (null = auto-generate) |
+| colInfo | ColInfo | Column configuration |
 
-**ColInfo Structure**:
+**ColInfo Fields**:
 ```typescript
 {
-  type?: string,           // Column type (see Grist Types below)
-  isFormula?: boolean,     // true = formula column, false = data column
-                          // Default: true (formula) unless formula is empty
-  formula?: string,        // Python expression (default: '')
-  label?: string,          // Display name (default: same as colId)
-  widgetOptions?: string,  // JSON string with widget configuration
-  visibleCol?: number,     // Column ref for Ref/RefList display (top-level!)
-  // ... other metadata fields
+  type?: string,           // Column type (see types below)
+  isFormula?: boolean,     // true = formula, false = data
+  formula?: string,        // Python expression
+  label?: string,          // Display label
+  widgetOptions?: string,  // JSON string (NOT object!)
+  visibleCol?: number,     // Top-level field (NOT in widgetOptions!)
+  recalcWhen?: number,     // 0=DEFAULT, 1=NEVER, 2=MANUAL_UPDATES
+  recalcDeps?: number[]    // Column refs for recalc triggers
 }
 ```
 
-**CRITICAL: visibleCol Placement**
-- ✅ **CORRECT**: `visibleCol` is a **top-level** property in colInfo
-- ❌ **WRONG**: `visibleCol` inside widgetOptions
-
-**Grist Column Types**:
+**Column Types**:
 - Basic: `'Text'`, `'Numeric'`, `'Int'`, `'Bool'`, `'Date'`, `'DateTime'`
 - Special: `'Any'`, `'Attachments'`, `'Choice'`, `'ChoiceList'`
 - References: `'Ref:TableName'`, `'RefList:TableName'`
 
 **Examples**:
 
-Simple text column:
+Text column:
 ```typescript
 ['AddColumn', 'People', 'firstName', {
   type: 'Text',
@@ -520,14 +624,15 @@ Simple text column:
 }]
 ```
 
-Numeric column with currency widget:
+Numeric with currency:
 ```typescript
 ['AddColumn', 'Products', 'price', {
   type: 'Numeric',
   isFormula: false,
   widgetOptions: JSON.stringify({
-    decimals: 2,
-    currency: 'USD'
+    numMode: 'currency',
+    currency: 'USD',
+    decimals: 2
   })
 }]
 ```
@@ -543,23 +648,11 @@ Formula column:
 
 Reference column with visibleCol:
 ```typescript
-// First, get the column ID for People.name (e.g., col_id = 25)
-// Then create the reference column
+// Assuming People.name column has ID 25
 ['AddColumn', 'Orders', 'customer', {
   type: 'Ref:People',
   isFormula: false,
   visibleCol: 25  // ✅ Top-level, NOT in widgetOptions!
-}]
-```
-
-Date column:
-```typescript
-['AddColumn', 'Events', 'eventDate', {
-  type: 'Date',
-  isFormula: false,
-  widgetOptions: JSON.stringify({
-    dateFormat: 'YYYY-MM-DD'
-  })
 }]
 ```
 
@@ -569,144 +662,43 @@ Choice column:
   type: 'Choice',
   isFormula: false,
   widgetOptions: JSON.stringify({
-    choices: ['Todo', 'In Progress', 'Done'],
-    choiceOptions: {
-      'Todo': {fillColor: '#FF0000'},
-      'Done': {fillColor: '#00FF00'}
-    }
+    choices: ['Todo', 'In Progress', 'Done']
   })
 }]
 ```
 
-**Common Errors**:
-- ❌ **widgetOptions as object instead of JSON string**:
-  ```typescript
-  // ❌ WRONG
-  widgetOptions: {decimals: 2}
+**Returns**: `{colRef: number, colId: string}`
 
-  // ✅ CORRECT
-  widgetOptions: JSON.stringify({decimals: 2})
-  ```
+**Source**: `sandbox/grist/useractions.py:1454`
 
-- ❌ **visibleCol inside widgetOptions**:
-  ```typescript
-  // ❌ WRONG
-  {
-    type: 'Ref:People',
-    widgetOptions: JSON.stringify({visibleCol: 25})
-  }
+---
 
-  // ✅ CORRECT
-  {
-    type: 'Ref:People',
-    visibleCol: 25
-  }
-  ```
+### AddHiddenColumn
 
-- ❌ **Python keyword as column ID**: `['AddColumn', 'Data', 'class', ...]`
-- ❌ **Missing isFormula for data columns**: Defaults to `true`, creating a formula column
+Adds a column hidden from default views.
 
-### ModifyColumn
+**Signature**: `['AddHiddenColumn', tableId, colId, colInfo]`
 
-Modifies an existing column's properties.
-
-**Signature**: `['ModifyColumn', tableId, colId, colInfo]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `colId` (string): Column to modify
-- `colInfo` (object): Properties to update
-
-**Modifiable Properties**:
-- Schema: `type`, `formula`, `isFormula`, `reverseColId`
-- Metadata: `label`, `widgetOptions`, `visibleCol`, `displayCol`, etc.
-- Cannot modify: `colId`, `id`, `parentId`
-
-**Examples**:
-
-Change column type:
+**Example**:
 ```typescript
-['ModifyColumn', 'People', 'age', {
-  type: 'Numeric'
-}]
-```
-
-Update formula:
-```typescript
-['ModifyColumn', 'Orders', 'total', {
-  formula: '($quantity * $unitPrice) * (1 + $taxRate)'
-}]
-```
-
-Convert to formula column:
-```typescript
-['ModifyColumn', 'Products', 'discount', {
+['AddHiddenColumn', 'People', 'gristHelper_Display', {
+  type: 'Text',
   isFormula: true,
-  formula: '$price * 0.1'
+  formula: '$firstName + " " + $lastName'
 }]
 ```
 
-Update widget options and visibleCol:
-```typescript
-['ModifyColumn', 'Orders', 'customer', {
-  visibleCol: 30,  // Reference to People.fullName column
-  widgetOptions: JSON.stringify({
-    widget: 'Reference'
-  })
-}]
-```
+**Returns**: `{colRef: number, colId: string}`
 
-**Common Errors**:
-- ❌ Trying to modify `colId` - use `RenameColumn` instead
-- ❌ Same widgetOptions/visibleCol mistakes as AddColumn
+**Source**: `sandbox/grist/useractions.py:1508`
 
-### RenameColumn
-
-Renames a column and updates all formula references.
-
-**Signature**: `['RenameColumn', tableId, oldColId, newColId]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `oldColId` (string): Current column ID
-- `newColId` (string): New column ID (must be valid Python identifier)
-
-**Example**:
-```typescript
-['RenameColumn', 'People', 'firstName', 'first_name']
-```
-
-Formulas are automatically updated:
-```python
-# Before: $firstName + " " + $lastName
-# After:  $first_name + " " + $lastName
-```
-
-### RemoveColumn
-
-Removes a column from a table.
-
-**Signature**: `['RemoveColumn', tableId, colId]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `colId` (string): Column to remove
-
-**Example**:
-```typescript
-['RemoveColumn', 'People', 'temporaryField']
-```
-
-**Common Errors**:
-- ❌ Cannot remove `id` or `manualSort` system columns
+---
 
 ### AddVisibleColumn
 
-Adds a column and makes it visible in all record views (not just raw data).
+Adds a column visible in all record views.
 
 **Signature**: `['AddVisibleColumn', tableId, colId, colInfo]`
-
-**Parameters**: Same as AddColumn
 
 **Example**:
 ```typescript
@@ -716,444 +708,721 @@ Adds a column and makes it visible in all record views (not just raw data).
 }]
 ```
 
-### AddHiddenColumn
+**Returns**: `{colRef: number, colId: string}`
 
-Adds a column but keeps it hidden from default views.
+**Source**: `sandbox/grist/useractions.py:1513`
 
-**Signature**: `['AddHiddenColumn', tableId, colId, colInfo]`
+---
 
-**Parameters**: Same as AddColumn
+### RemoveColumn
+
+Removes a column.
+
+**Signature**: `['RemoveColumn', tableId, colId]`
 
 **Example**:
 ```typescript
-// Useful for internal helper columns
-['AddHiddenColumn', 'People', 'gristHelper_Display', {
-  type: 'Any',
-  isFormula: true,
-  formula: '$firstName + " " + $lastName'
+['RemoveColumn', 'People', 'temporaryField']
+```
+
+**Returns**: `void`
+
+**Restrictions**: Cannot remove group-by columns from summary tables
+
+**Source**: `sandbox/grist/useractions.py:1582`
+
+---
+
+### RenameColumn
+
+Renames a column and updates formula references.
+
+**Signature**: `['RenameColumn', tableId, oldColId, newColId]`
+
+**Example**:
+```typescript
+['RenameColumn', 'People', 'firstName', 'first_name']
+```
+
+**Returns**: `string` - The actual new column ID (sanitized)
+
+**Auto-update**: Formulas using the old column ID are automatically updated
+
+**Source**: `sandbox/grist/useractions.py:1590`
+
+---
+
+### ModifyColumn
+
+Modifies column properties.
+
+**Signature**: `['ModifyColumn', tableId, colId, colInfo]`
+
+**Modifiable**: All ColInfo fields except `colId`, `id`, `parentId`
+
+**Example**:
+```typescript
+['ModifyColumn', 'People', 'age', {
+  type: 'Numeric',
+  widgetOptions: JSON.stringify({decimals: 0})
 }]
 ```
 
+**Returns**: `void`
+
+**Note**: May trigger type conversion and data migration
+
+**Source**: `sandbox/grist/useractions.py:1656`
+
+---
+
+### SetDisplayFormula
+
+Sets a display formula for a field or column.
+
+**Signature**: `['SetDisplayFormula', tableId, fieldRef, colRef, formula]`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| fieldRef | number \| null | Field reference (mutually exclusive with colRef) |
+| colRef | number \| null | Column reference (mutually exclusive with fieldRef) |
+| formula | string | Display formula |
+
+**Example**:
+```typescript
+['SetDisplayFormula', 'People', null, 25, '$firstName + " " + $lastName']
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1598`
+
+---
+
 ### CopyFromColumn
 
-Copies column type, options, and data from one column to another (used in transformations).
+Copies column schema and data.
 
 **Signature**: `['CopyFromColumn', tableId, srcColId, dstColId, widgetOptions]`
 
-**Parameters**:
-- `tableId` (string): Target table
-- `srcColId` (string): Source column to copy from
-- `dstColId` (string): Destination column to copy to
-- `widgetOptions` (string|null): JSON string of widget options, or null to use source's options
-
-**Behavior**:
-- Updates destination column's type to match source
-- Copies widgetOptions (or uses provided ones)
-- Copies visibleCol, displayCol, and rules settings
-- Copies all data values from source to destination
-- Only updates rows where values differ (optimized)
-
-**Examples**:
-
-Copy column data and settings:
+**Example**:
 ```typescript
 ['CopyFromColumn', 'People', 'age_temp', 'age', null]
 ```
 
-Copy with custom widget options:
-```typescript
-['CopyFromColumn', 'Products', 'price_new', 'price',
-  JSON.stringify({decimals: 2, currency: 'EUR'})]
-```
+**Returns**: `void`
 
-**Use Case**: Typically used during column transformations where you:
-1. Create a transform column (e.g., `grist_Transform`)
-2. Populate it with transformed data
-3. Use CopyFromColumn to move the data to the original column
-4. Delete the transform column
+**Use Case**: Column transformations
 
-### ConvertFromColumn
-
-Converts column data from one type to another with external conversion logic.
-
-**Signature**: `['ConvertFromColumn', tableId, srcColId, dstColId, type, widgetOptions, visibleColRef]`
-
-**Parameters**:
-- `tableId` (string): Target table
-- `srcColId` (string): Source column
-- `dstColId` (string): Destination column
-- `type` (string): New column type
-- `widgetOptions` (string): JSON widget options for new type
-- `visibleColRef` (number): Column ref for Ref/RefList display
-
-**Behavior**:
-- Calls external converter to transform values
-- Takes into account display values for smart conversion
-- Updates destination column type
-- Bulk updates all converted values
-
-**Example**:
-
-Convert text to reference:
-```typescript
-// Convert text city names to Ref:Cities
-['ConvertFromColumn', 'Locations', 'cityName', 'cityRef',
-  'Ref:Cities', '{}', 25]  // 25 = Cities.name column ref
-```
-
-**Note**: This is primarily used internally by Grist's UI during type conversions. Most developers will use simpler actions like ModifyColumn.
+**Source**: `sandbox/grist/useractions.py:1784`
 
 ---
 
-## Import and Transform Actions
+### ConvertFromColumn
 
-### GenImporterView
+Converts column data using external conversion logic.
 
-Generates views for importing data.
+**Signature**: `['ConvertFromColumn', tableId, srcColId, dstColId, type, widgetOptions, visibleColRef]`
 
-**Signature**: `['GenImporterView', sourceTableId, destTableId, transformRule]`
+**Example**:
+```typescript
+['ConvertFromColumn', 'Locations', 'cityName', 'cityRef', 'Ref:Cities', '{}', 25]
+```
 
-This is a complex action typically used internally during imports. For most use cases, use the higher-level import endpoints instead of this action directly.
+**Returns**: `void`
+
+**Note**: Primarily used internally by Grist UI
+
+**Source**: `sandbox/grist/useractions.py:1748`
+
+---
+
+### RenameChoices
+
+Updates choice names in Choice/ChoiceList columns.
+
+**Signature**: `['RenameChoices', tableId, colId, renames]`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableId | string | Target table |
+| colId | string | Choice/ChoiceList column |
+| renames | {[old: string]: string} | Old → new name mapping |
+
+**Example**:
+```typescript
+['RenameChoices', 'Tasks', 'status', {
+  'Todo': 'To Do',
+  'In Progress': 'Working On'
+}]
+```
+
+**Returns**: `void`
+
+**Behavior**: Updates data and filters, but NOT widgetOptions
+
+**Source**: `sandbox/grist/useractions.py:1865`
+
+---
+
+### AddReverseColumn
+
+Creates a reverse reference column (two-way binding).
+
+**Signature**: `['AddReverseColumn', tableId, colId]`
+
+**Example**:
+```typescript
+// If Orders.customer references People
+// This creates People.orders pointing back
+['AddReverseColumn', 'Orders', 'customer']
+```
+
+**Returns**: `{colRef: number, colId: string}`
+
+**Source**: `sandbox/grist/useractions.py:1941`
+
+---
+
+### AddEmptyRule
+
+Adds an empty conditional style rule.
+
+**Signature**: `['AddEmptyRule', tableId, fieldRef, colRef]`
+
+**Example**:
+```typescript
+['AddEmptyRule', 'People', null, 25]
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1907`
+
+---
+
+### MaybeCopyDisplayFormula
+
+Copies displayCol if source has one.
+
+**Signature**: `['MaybeCopyDisplayFormula', srcColRef, dstColRef]`
+
+**Example**:
+```typescript
+['MaybeCopyDisplayFormula', 25, 30]
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1850`
 
 ---
 
 ## View Actions
 
-These actions manage views, view sections, and fields. Most developers won't need these unless building custom UI.
+### CreateViewSection
+
+Creates a view section (can create new table/view if needed).
+
+**Signature**: `['CreateViewSection', tableRef, viewRef, sectionType, groupbyColRefs, tableId]`
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| tableRef | number | Table reference (0 = create new) |
+| viewRef | number | View reference (0 = create new) |
+| sectionType | string | 'record', 'detail', 'chart', 'form', etc. |
+| groupbyColRefs | number[] \| null | Columns for grouping (null = plain section) |
+| tableId | string | Table ID for new table |
+
+**Example**:
+```typescript
+['CreateViewSection', 1, 2, 'record', null, '']
+```
+
+**Returns**: `{tableRef: number, viewRef: number, sectionRef: number}`
+
+**Source**: `sandbox/grist/useractions.py:2302`
+
+---
+
+### UpdateSummaryViewSection
+
+Updates summary section grouping columns.
+
+**Signature**: `['UpdateSummaryViewSection', sectionRef, groupbyColRefs]`
+
+**Example**:
+```typescript
+['UpdateSummaryViewSection', 10, [5, 8]]
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:2355`
+
+---
+
+### DetachSummaryViewSection
+
+Converts summary section to real table.
+
+**Signature**: `['DetachSummaryViewSection', sectionRef]`
+
+**Example**:
+```typescript
+['DetachSummaryViewSection', 10]
+```
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:2366`
+
+---
 
 ### AddView
 
-Adds a new view (page) to the document.
+Creates a new view (page).
 
-**Signature**: `['AddView', viewName]`
+**Signature**: `['AddView', tableId, viewType, name]`
 
-### RemoveView
+**Example**:
+```typescript
+['AddView', 'People', 'raw_data', 'People Page']
+```
 
-Removes a view.
+**Returns**: `{id: number, sections: number[]}`
 
-**Signature**: `['RemoveView', viewRef]`
-
-### CreateViewSection
-
-Creates a new view section (widget on a page).
-
-**Signature**: `['CreateViewSection', tableRef, viewRef, typeStr, widgetOptions, linkingInfo]`
-
-**Common view section types**: `'record'`, `'chart'`, `'custom'`
+**Source**: `sandbox/grist/useractions.py:2382`
 
 ---
 
-## Advanced Actions
+### RemoveView (Deprecated)
+
+**Use instead**: `['RemoveRecord', '_grist_Views', viewId]`
+
+**Signature**: `['RemoveView', viewId]`
+
+**Source**: `sandbox/grist/useractions.py:2426`
+
+---
+
+### AddViewSection (Deprecated)
+
+**Use instead**: `CreateViewSection`
+
+**Signature**: `['AddViewSection', title, viewSectionType, viewRowId, tableId]`
+
+**Source**: `sandbox/grist/useractions.py:2440`
+
+---
+
+### RemoveViewSection (Deprecated)
+
+**Use instead**: `['RemoveRecord', '_grist_Views_section', sectionId]`
+
+**Signature**: `['RemoveViewSection', viewSectionId]`
+
+**Source**: `sandbox/grist/useractions.py:2455`
+
+---
+
+## Document Actions
+
+### InitNewDoc
+
+Initializes a new document with schema structure.
+
+**Signature**: `['InitNewDoc']`
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:307`
+
+---
 
 ### Calculate
 
-Triggers recalculation of formulas (system action).
+Triggers formula recalculation (system action).
 
 **Signature**: `['Calculate']`
 
-### UpdateCurrentTime
+**Returns**: `void`
 
-Updates the NOW() function's value (system action).
-
-**Signature**: `['UpdateCurrentTime']`
-
-### ApplyDocActions
-
-Applies low-level DocActions directly (advanced use only).
-
-**Signature**: `['ApplyDocActions', docActions]`
+**Source**: `sandbox/grist/useractions.py:344`
 
 ---
 
-## Common Pitfalls Summary
+### UpdateCurrentTime
 
-### 1. UserAction Format Wrapping
-❌ **WRONG**: `{actions: [['AddTable', ...]]}`
-✅ **CORRECT**: `[['AddTable', ...]]`
+Updates NOW() function (system action).
 
-### 2. visibleCol Placement
-❌ **WRONG**: Inside `widgetOptions`
-✅ **CORRECT**: Top-level in `colInfo`
+**Signature**: `['UpdateCurrentTime']`
 
-### 3. widgetOptions Serialization
-❌ **WRONG**: `widgetOptions: {decimals: 2}` (object)
-✅ **CORRECT**: `widgetOptions: JSON.stringify({decimals: 2})` (string)
+**Returns**: `void`
 
-### 4. Python Keywords in Identifiers
-❌ **WRONG**: `'class'`, `'import'`, `'from'`, `'return'`, etc.
-✅ **CORRECT**: `'Class'`, `'Import_'`, `'From_'`, `'return_value'`
+**Source**: `sandbox/grist/useractions.py:352`
 
-Common Python keywords to avoid:
-- `class`, `def`, `import`, `from`, `as`, `return`, `if`, `else`, `elif`, `for`, `while`, `break`, `continue`, `pass`, `try`, `except`, `finally`, `raise`, `with`, `lambda`, `yield`, `global`, `nonlocal`, `assert`, `del`
+---
 
-### 5. Column-Oriented vs Row-Oriented
-❌ **WRONG**: Array of row objects
-✅ **CORRECT**: Object with arrays for each column
+### ApplyDocActions
 
-### 6. isFormula Default Value
-- **Default in AddColumn/ModifyColumn**: `true` (creates formula column)
-- **Default in AddTable**: `bool(formula)` - true if formula is non-empty, false otherwise
-- **Type defaults**: Formula columns default to type `'Any'`, data columns default to type `'Text'`
-- **Best practice**: Always specify explicitly for clarity
+Applies low-level DocActions.
 
-```typescript
-// ❌ Unclear - will create formula column with empty formula
-{id: 'name'}  // isFormula defaults to true
+**Signature**: `['ApplyDocActions', docActions]`
 
-// ✅ Clear - explicitly a data column
-{id: 'name', isFormula: false, type: 'Text'}
+**Returns**: `void`
 
-// ✅ Clear - explicitly a formula column
-{id: 'total', isFormula: true, formula: '$quantity * $price'}
+**Source**: `sandbox/grist/useractions.py:334`
+
+---
+
+### ApplyUndoActions
+
+Applies undo actions in reverse.
+
+**Signature**: `['ApplyUndoActions', undoActions]`
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:339`
+
+---
+
+### RespondToRequests
+
+Reevaluates REQUEST() function calls.
+
+**Signature**: `['RespondToRequests', responses, cachedKeys]`
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:360`
+
+---
+
+### RemoveStaleObjects
+
+Removes transform columns and temp tables.
+
+**Signature**: `['RemoveStaleObjects']`
+
+**Returns**: `void`
+
+**Source**: `sandbox/grist/useractions.py:1620`
+
+---
+
+### GenImporterView
+
+Generates importer view (internal use).
+
+**Signature**: `['GenImporterView', sourceTableId, destTableId, transformRule, options]`
+
+**Returns**: Result from DoGenImporterView
+
+**Source**: `sandbox/grist/useractions.py:2509`
+
+---
+
+## Common Pitfalls
+
+### 1. Request Body Format
+
+❌ **WRONG**: Wrapping in `{actions: [...]}`
+```json
+{"actions": [["AddTable", "MyTable", [...]]]}
 ```
 
-### 7. Empty vs Null Arrays
-For `rowIds` in BulkAddRecord:
-- `[null, null]` - Auto-generate 2 row IDs ✅
-- `[]` - Add 0 rows ✅
-- Not providing rowIds - ERROR ❌
+✅ **CORRECT**: Direct array
+```json
+[["AddTable", "MyTable", [...]]]
+```
 
-### 8. Date Formats
-Grist dates are stored as **seconds since epoch**, not milliseconds:
+---
+
+### 2. visibleCol Placement
+
+❌ **WRONG**: Inside widgetOptions
 ```typescript
-// ❌ WRONG (JavaScript timestamp in milliseconds)
-date: Date.now()  // 1699876543210
+{
+  type: 'Ref:People',
+  widgetOptions: JSON.stringify({visibleCol: 25})
+}
+```
 
-// ✅ CORRECT (seconds since epoch)
+✅ **CORRECT**: Top-level in ColInfo
+```typescript
+{
+  type: 'Ref:People',
+  visibleCol: 25
+}
+```
+
+---
+
+### 3. widgetOptions Serialization
+
+❌ **WRONG**: Object
+```typescript
+widgetOptions: {decimals: 2}
+```
+
+✅ **CORRECT**: JSON string
+```typescript
+widgetOptions: JSON.stringify({decimals: 2})
+```
+
+---
+
+### 4. Column-Oriented vs Row-Oriented
+
+❌ **WRONG**: Row-oriented
+```typescript
+[
+  {name: 'Alice', age: 30},
+  {name: 'Bob', age: 25}
+]
+```
+
+✅ **CORRECT**: Column-oriented
+```typescript
+{
+  name: ['Alice', 'Bob'],
+  age: [30, 25]
+}
+```
+
+---
+
+### 5. Python Keywords
+
+❌ **WRONG**: Using reserved words
+```typescript
+'class', 'import', 'from', 'return', 'if', 'for', 'while'
+```
+
+✅ **CORRECT**: Avoid or modify
+```typescript
+'Class', 'Import_', 'From_', 'return_value', 'If_', 'For_', 'While_'
+```
+
+**Complete list**: `False`, `None`, `True`, `and`, `as`, `assert`, `async`, `await`, `break`, `class`, `continue`, `def`, `del`, `elif`, `else`, `except`, `finally`, `for`, `from`, `global`, `if`, `import`, `in`, `is`, `lambda`, `nonlocal`, `not`, `or`, `pass`, `raise`, `return`, `try`, `while`, `with`, `yield`
+
+---
+
+### 6. Array Length Mismatches
+
+❌ **WRONG**: Mismatched lengths
+```typescript
+['BulkAddRecord', 'People', [null, null, null], {
+  name: ['Alice', 'Bob'],    // Length 2
+  age: [30, 25, 35]          // Length 3
+}]
+```
+
+✅ **CORRECT**: All same length
+```typescript
+['BulkAddRecord', 'People', [null, null, null], {
+  name: ['Alice', 'Bob', 'Charlie'],  // Length 3
+  age: [30, 25, 35]                   // Length 3
+}]
+```
+
+---
+
+### 7. isFormula Default
+
+**Default in AddColumn/ModifyColumn**: `true` (creates formula column)
+**Default in AddTable**: `bool(formula)` (true if formula non-empty)
+
+❌ **UNCLEAR**: Relying on defaults
+```typescript
+{id: 'name'}  // Creates formula column!
+```
+
+✅ **CLEAR**: Always specify
+```typescript
+{id: 'name', isFormula: false, type: 'Text'}
+```
+
+---
+
+### 8. Date/Time Format
+
+❌ **WRONG**: Milliseconds
+```typescript
+date: Date.now()  // 1699876543210
+```
+
+✅ **CORRECT**: Seconds
+```typescript
 date: Math.floor(Date.now() / 1000)  // 1699876543
 ```
 
-For Date columns, you can also use date strings:
+Or use date strings:
 ```typescript
-date: '2025-11-15'  // ✅ Parsed automatically
+date: '2025-11-15'  // Auto-parsed
 ```
 
-### 9. Reference Column Values
-When adding/updating Ref columns:
-- Use the **row ID** of the referenced record (number)
-- `0` means no reference (null)
-- Invalid IDs are treated as 0
+---
+
+### 9. Reference Values
+
+For Ref columns:
+- Use row ID (number)
+- `0` = no reference
+- Invalid IDs treated as `0`
 
 ```typescript
 ['BulkAddRecord', 'Orders', [null, null], {
-  customer: [5, 12],  // References to People table row IDs
-  product: [0, 8]     // 0 = no reference, 8 = reference to row 8
+  customer: [5, 12],  // Row IDs in People table
+  product: [0, 8]     // 0 = no reference
 }]
 ```
+
+---
 
 ### 10. RefList Encoding
-RefList columns store arrays of row IDs:
+
+RefList values use `['L', ...rowIds]` encoding:
+
 ```typescript
 ['UpdateRecord', 'Projects', 1, {
-  assignees: ['L', 5, 10, 15]  // Special encoding: ['L', ...rowIds]
+  assignees: ['L', 5, 10, 15]
 }]
 ```
 
-However, for most API usage, you can pass a simple array:
+**However**: For most API usage, simple arrays work:
 ```typescript
-assignees: [5, 10, 15]  // Usually works, converted internally
+assignees: [5, 10, 15]  // Auto-converted internally
 ```
 
-### 11. Array Length Mismatches
-All column arrays in BulkAddRecord/BulkUpdateRecord must have the same length:
-```typescript
-// ❌ WRONG
-['BulkAddRecord', 'People', [null, null, null], {
-  name: ['Alice', 'Bob'],      // Length 2
-  age: [30, 25, 35]            // Length 3 - MISMATCH!
-}]
+---
 
-// ✅ CORRECT
-['BulkAddRecord', 'People', [null, null, null], {
-  name: ['Alice', 'Bob', 'Charlie'],   // Length 3
-  age: [30, 25, 35]                    // Length 3
-}]
-```
+### 11. Formula Syntax
 
-### 12. Formula Syntax
-Formulas are **Python expressions**, not JavaScript:
+Formulas are **Python**, not JavaScript:
+
+✅ **CORRECT** (Python):
 ```python
-# ✅ CORRECT (Python)
-formula: '$price * 0.9'
-formula: '$firstName + " " + $lastName'
-formula: 'sum($values) if $values else 0'
-
-# ❌ WRONG (JavaScript syntax won't work)
-formula: '$price * 0.9;'  // No semicolons
-formula: `${firstName}`   // No template literals
-formula: '$values.reduce((a,b) => a+b)'  // No arrow functions
+'$price * 0.9'
+'$firstName + " " + $lastName'
+'sum($values) if $values else 0'
 ```
 
-### 13. Attempting to Modify System Tables
-Most `_grist_*` system tables should be modified through UserActions, not direct record updates:
-```typescript
-// ❌ WRONG - Don't directly add records to _grist_Tables_column
-['BulkAddRecord', '_grist_Tables_column', ...]
+❌ **WRONG** (JavaScript):
+```javascript
+'$price * 0.9;'  // No semicolons
+`${firstName}`   // No template literals
+'$values.reduce((a,b) => a+b)'  // No arrow functions
+```
 
-// ✅ CORRECT - Use AddColumn UserAction
+---
+
+### 12. System Tables
+
+❌ **WRONG**: Direct modification
+```typescript
+['BulkAddRecord', '_grist_Tables_column', ...]
+```
+
+✅ **CORRECT**: Use UserActions
+```typescript
 ['AddColumn', 'MyTable', 'myColumn', {...}]
 ```
 
 ---
 
-## Complete Action Reference
+## Complete Action Index
 
-**Table Actions**:
-- `AddTable(tableId, columns)`
-- `AddEmptyTable(tableId)`
-- `AddRawTable(tableId)`
-- `RemoveTable(tableId)`
-- `RenameTable(oldTableId, newTableId)`
-- `DuplicateTable(tableId, newTableId, includeData)`
+### Table Operations (7)
+- `AddTable(tableId, columns)` - Create table with columns
+- `AddEmptyTable(tableId)` - Create empty table (3 formula columns)
+- `AddRawTable(tableId)` - Create table without view
+- `RemoveTable(tableId)` - Delete table
+- `RenameTable(oldId, newId)` - Rename table
+- `DuplicateTable(existingId, newId, includeData)` - Duplicate table
+- `GenImporterView(sourceTable, destTable, rule, opts)` - Import view (internal)
 
-**Record Actions**:
-- `AddRecord(tableId, rowId, colValues)`
-- `BulkAddRecord(tableId, rowIds, colValues)`
-- `UpdateRecord(tableId, rowId, colValues)`
-- `BulkUpdateRecord(tableId, rowIds, colValues)`
-- `RemoveRecord(tableId, rowId)`
-- `BulkRemoveRecord(tableId, rowIds)`
-- `ReplaceTableData(tableId, rowIds, colValues)`
-- `AddOrUpdateRecord(tableId, rowId, colValues)`
-- `BulkAddOrUpdateRecord(tableId, rowIds, colValues)`
+### Record Operations (10)
+- `AddRecord(table, rowId, values)` - Add single record
+- `BulkAddRecord(table, rowIds, values)` - Add multiple records
+- `UpdateRecord(table, rowId, values)` - Update single record
+- `BulkUpdateRecord(table, rowIds, values)` - Update multiple records
+- `RemoveRecord(table, rowId)` - Remove single record
+- `BulkRemoveRecord(table, rowIds)` - Remove multiple records
+- `ReplaceTableData(table, rowIds, values)` - Replace all data
+- `AddOrUpdateRecord(table, require, values, opts)` - Upsert single
+- `BulkAddOrUpdateRecord(table, require, values, opts)` - Upsert multiple
 
-**Column Actions**:
-- `AddColumn(tableId, colId, colInfo)`
-- `AddHiddenColumn(tableId, colId, colInfo)`
-- `AddVisibleColumn(tableId, colId, colInfo)`
-- `RemoveColumn(tableId, colId)`
-- `RenameColumn(tableId, oldColId, newColId)`
-- `ModifyColumn(tableId, colId, colInfo)`
-- `CopyFromColumn(tableId, srcColId, dstColId, widgetOptions)`
-- `ConvertFromColumn(tableId, srcColId, dstColId, type, widgetOptions, visibleColRef)`
-- `SetDisplayFormula(tableId, rowId, colRef, formula)`
-- `AddReverseColumn(sourceTableId, sourceColId, reverseColId)`
-- `RenameChoices(tableId, colId, renames)`
-- `MaybeCopyDisplayFormula(srcColRef, dstColRef)`
+### Column Operations (13)
+- `AddColumn(table, colId, colInfo)` - Add column
+- `AddHiddenColumn(table, colId, colInfo)` - Add hidden column
+- `AddVisibleColumn(table, colId, colInfo)` - Add visible column
+- `RemoveColumn(table, colId)` - Remove column
+- `RenameColumn(table, oldId, newId)` - Rename column
+- `ModifyColumn(table, colId, colInfo)` - Modify column properties
+- `SetDisplayFormula(table, fieldRef, colRef, formula)` - Set display formula
+- `CopyFromColumn(table, srcId, dstId, opts)` - Copy column
+- `ConvertFromColumn(table, srcId, dstId, type, opts, visCol)` - Convert column
+- `RenameChoices(table, colId, renames)` - Rename choice values
+- `AddReverseColumn(table, colId)` - Add reverse reference
+- `AddEmptyRule(table, fieldRef, colRef)` - Add style rule
+- `MaybeCopyDisplayFormula(srcRef, dstRef)` - Copy display formula
 
-**View Actions**:
-- `AddView(viewName)`
-- `RemoveView(viewRef)`
-- `AddViewSection(tableRef, viewRef, sectionType, linkedSectionRef)`
-- `RemoveViewSection(sectionRef)`
-- `CreateViewSection(tableRef, viewRef, typeStr, widgetOptions, linkingInfo)`
-- `UpdateSummaryViewSection(sectionRef, groupByColumns)`
-- `DetachSummaryViewSection(sectionRef)`
+### View Operations (6)
+- `CreateViewSection(tableRef, viewRef, type, groupby, tableId)` - Create section
+- `UpdateSummaryViewSection(sectionRef, groupby)` - Update summary
+- `DetachSummaryViewSection(sectionRef)` - Detach summary
+- `AddView(tableId, viewType, name)` - Create view
+- `RemoveView(viewId)` - **DEPRECATED** - Remove view
+- `AddViewSection(title, type, viewId, tableId)` - **DEPRECATED**
+- `RemoveViewSection(sectionId)` - **DEPRECATED**
 
-**System Actions**:
-- `Calculate()`
-- `UpdateCurrentTime()`
-- `ApplyDocActions(docActions)`
-- `ApplyUndoActions(docActions)`
-- `InitNewDoc()`
-- `RemoveStaleObjects()`
+### Document Operations (7)
+- `InitNewDoc()` - Initialize new document
+- `Calculate()` - Recalculate formulas (system)
+- `UpdateCurrentTime()` - Update NOW() (system)
+- `ApplyDocActions(actions)` - Apply low-level actions
+- `ApplyUndoActions(actions)` - Apply undo actions
+- `RespondToRequests(responses, keys)` - Reevaluate REQUEST()
+- `RemoveStaleObjects()` - Clean up temp objects
 
-**Import Actions**:
-- `GenImporterView(sourceTableId, destTableId, transformRule)`
-
-**ACL Actions**:
-- `AddEmptyRule()`
+**Total**: 43 actions
 
 ---
 
-## Usage Examples
+## Quick Reference
 
-### Complete Workflow: Creating a CRM
+### Most Common Actions
 
 ```typescript
-// 1. Create tables
-await fetch('/api/docs/DOCID/apply', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify([
-    ['AddTable', 'Companies', [
-      {id: 'name', type: 'Text', isFormula: false},
-      {id: 'industry', type: 'Choice', isFormula: false,
-       widgetOptions: JSON.stringify({
-         choices: ['Technology', 'Finance', 'Healthcare', 'Retail']
-       })}
-    ]],
-    ['AddTable', 'Contacts', [
-      {id: 'firstName', type: 'Text', isFormula: false},
-      {id: 'lastName', type: 'Text', isFormula: false},
-      {id: 'email', type: 'Text', isFormula: false},
-      {id: 'company', type: 'Ref:Companies', isFormula: false}
-    ]]
-  ])
-});
+// Create table
+['AddTable', 'People', [{id: 'name', type: 'Text', isFormula: false}]]
 
-// 2. Add company records
-await fetch('/api/docs/DOCID/apply', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify([
-    ['BulkAddRecord', 'Companies', [1, 2, 3], {
-      name: ['Acme Corp', 'TechStart Inc', 'MegaRetail'],
-      industry: ['Technology', 'Technology', 'Retail']
-    }]
-  ])
-});
+// Add records
+['BulkAddRecord', 'People', [null, null], {name: ['Alice', 'Bob']}]
 
-// 3. Add contacts with company references
-await fetch('/api/docs/DOCID/apply', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify([
-    ['BulkAddRecord', 'Contacts', [null, null, null, null], {
-      firstName: ['John', 'Jane', 'Bob', 'Alice'],
-      lastName: ['Doe', 'Smith', 'Johnson', 'Williams'],
-      email: ['john@acme.com', 'jane@acme.com', 'bob@techstart.com', 'alice@megaretail.com'],
-      company: [1, 1, 2, 3]  // References to Companies
-    }]
-  ])
-});
+// Update records
+['BulkUpdateRecord', 'People', [1, 2], {status: ['active', 'active']}]
 
-// 4. Add a formula column to Companies
-await fetch('/api/docs/DOCID/apply', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify([
-    ['AddColumn', 'Companies', 'contactCount', {
-      type: 'Numeric',
-      isFormula: true,
-      formula: 'len(Contacts.lookupRecords(company=$id))'
-    }]
-  ])
-});
+// Add column
+['AddColumn', 'People', 'email', {type: 'Text', isFormula: false}]
 
-// 5. Update records
-await fetch('/api/docs/DOCID/apply', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify([
-    ['BulkUpdateRecord', 'Contacts', [1, 2], {
-      email: ['john.doe@acme.com', 'jane.smith@acme.com']
-    }]
-  ])
-});
+// Modify column
+['ModifyColumn', 'People', 'age', {type: 'Numeric'}]
+
+// Upsert
+['BulkAddOrUpdateRecord', 'Users',
+  {email: ['a@ex.com', 'b@ex.com']},
+  {name: ['Alice', 'Bob']},
+  {onMany: 'first'}
+]
 ```
 
 ---
 
-## Debugging Tips
-
-1. **Check the response**: The /apply endpoint returns detailed information about what was executed
-2. **Use single actions first**: Test one action at a time before batching
-3. **Inspect metadata tables**: Query `_grist_Tables`, `_grist_Tables_column` to see current schema
-4. **Check Python syntax**: Formulas must be valid Python expressions
-5. **Verify column references**: Use the API to get column IDs before referencing them in visibleCol
-
----
-
-## Related Documentation
-
-- **Grist Types Reference**: For detailed information about column types and widgetOptions
-- **REST API Reference**: For general API usage and authentication
-- **Formula Reference**: For Python formula syntax and available functions
-- **Sandbox Documentation**: `/home/user/grist-core/sandbox/grist/useractions.py:211` - Complete implementation
-
----
-
 **Last Updated**: 2025-11-15
-**Audience**: Developers using the Grist `/apply` endpoint
-**Grist Core Version**: Based on current `grist-core` repository
+**Source**: `sandbox/grist/useractions.py`
+**Endpoint**: `POST /api/docs/:docId/apply`

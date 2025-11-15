@@ -1,496 +1,252 @@
-# Grist Database Schema Reference
+# Grist Schema Reference
 
-> **Schema Version:** 44
-> **Last Updated:** 2025-11
-> **Authoritative Source:** [`sandbox/grist/schema.py`](sandbox/grist/schema.py)
+**Complete reference for Grist metadata tables** - the system tables that define document structure.
 
-## Overview
+**Schema Version**: 44 | **Last Updated**: 2025-11-15
 
-Grist stores document metadata in special tables prefixed with `_grist_*`. These metadata tables describe the structure of user tables, views, pages, access control rules, and other document-level settings. While users can create and modify their own tables, these metadata tables are managed by Grist's data engine and define how the document is organized and displayed.
+---
 
-**Key Concepts:**
-- **Document Database**: Each `.grist` file is a SQLite database containing both user data tables and metadata tables
-- **Metadata Tables** (`_grist_*`): Managed by the Python data engine, defined in `sandbox/grist/schema.py`
+## Quick Reference
+
+| Table | Purpose | Key Fields |
+|-------|---------|------------|
+| **_grist_DocInfo** | Document settings | schemaVersion, timezone, documentSettings |
+| **_grist_Tables** | User tables registry | tableId, primaryViewId, onDemand |
+| **_grist_Tables_column** | Column definitions | colId, type, formula, visibleCol |
+| **_grist_Views** | View definitions | name, layoutSpec |
+| **_grist_Views_section** | View sections (widgets) | tableRef, parentKey, sortColRefs |
+| **_grist_Views_section_field** | Field display settings | colRef, width, widgetOptions |
+| **_grist_Pages** | Page hierarchy | viewRef, indentation, pagePos |
+| **_grist_Filters** | Column filters | viewSectionRef, colRef, filter |
+| **_grist_ACLResources** | ACL resource definitions | tableId, colIds |
+| **_grist_ACLRules** | Access control rules | resource, aclFormula, permissionsText |
+| **_grist_Attachments** | File attachments | fileIdent, fileName, fileSize |
+| **_grist_Triggers** | Webhook triggers | tableRef, eventTypes, actions |
+| **_grist_Shares** | Public shares | linkId, options |
+| **_grist_Cells** | Cell metadata (comments) | tableRef, colRef, rowId, type |
+
+---
+
+## Table of Contents
+
+- [Quick Reference](#quick-reference)
+- [Schema Overview](#schema-overview)
+- [Core Tables](#core-tables)
+- [View Tables](#view-tables)
+- [Access Control Tables](#access-control-tables)
+- [Feature Tables](#feature-tables)
+- [Data Types](#data-types)
+- [Relationships](#relationships)
+- [Deprecated Tables](#deprecated-tables)
+
+---
+
+## Schema Overview
+
+### Architecture
+
+```mermaid
+graph TD
+    DocInfo[_grist_DocInfo<br/>Document Settings]
+    Tables[_grist_Tables<br/>Table Registry]
+    Columns[_grist_Tables_column<br/>Column Definitions]
+    Pages[_grist_Pages<br/>Page Tree]
+    Views[_grist_Views<br/>View Definitions]
+    Sections[_grist_Views_section<br/>View Sections]
+    Fields[_grist_Views_section_field<br/>Field Settings]
+    
+    Tables --> Columns
+    Tables --> Views
+    Pages --> Views
+    Views --> Sections
+    Sections --> Tables
+    Sections --> Fields
+    Fields --> Columns
+```
+
+### System vs Metadata
+
+- **Metadata Tables** (`_grist_*`): Managed by Python data engine, defined in `sandbox/grist/schema.py`
 - **System Tables** (`_gristsys_*`): Managed by Node.js, defined in `app/server/lib/DocStorage.ts`
-- **Schema Version**: Currently at version 44, tracked in `_grist_DocInfo.schemaVersion`
 
 ---
 
-## Quick Reference Table
+## Core Tables
 
-| Metadata Table | Purpose | Key Relationships |
-|----------------|---------|-------------------|
-| `_grist_DocInfo` | Document-wide settings (timezone, schema version) | Single record with id=1 |
-| `_grist_Tables` | Registry of user tables | → `_grist_Views`, `_grist_Views_section` |
-| `_grist_Tables_column` | Column definitions and formulas | → `_grist_Tables` (parent) |
-| `_grist_Views` | View definitions | ← `_grist_Tables` (primaryViewId) |
-| `_grist_Views_section` | Sections within views (list, detail, chart) | → `_grist_Tables`, `_grist_Views` |
-| `_grist_Views_section_field` | Field display settings within sections | → `_grist_Views_section`, `_grist_Tables_column` |
-| `_grist_Pages` | Page hierarchy and navigation | → `_grist_Views`, `_grist_Shares` |
-| `_grist_Filters` | Column filters for view sections | → `_grist_Views_section`, `_grist_Tables_column` |
-| `_grist_ACLRules` | Access control rules | → `_grist_ACLResources`, `_grist_Tables_column` |
-| `_grist_ACLResources` | ACL resource definitions (table/column specs) | ← `_grist_ACLRules` |
-| `_grist_Attachments` | File attachments metadata | File data stored in `_gristsys_Files` |
-| `_grist_Triggers` | Webhook triggers | → `_grist_Tables`, `_grist_Tables_column` |
-| `_grist_Shares` | Document share links | ← `_grist_Pages` |
-| `_grist_Cells` | Cell-level metadata (comments, etc.) | → `_grist_Tables`, `_grist_Tables_column` |
+### _grist_DocInfo
 
----
+Document-wide metadata. **Always exactly one record** with `id=1`.
 
-## Table Hierarchy Diagram
+| Column | Type | Description | Default | Required |
+|--------|------|-------------|---------|----------|
+| docId | Text | **DEPRECATED** (v44) - Now in _gristsys_FileInfo | `""` | |
+| peers | Text | **DEPRECATED** - Now use _grist_ACLPrincipals | `""` | |
+| basketId | Text | Basket ID for online storage | `""` | |
+| schemaVersion | Int | Document schema version | `0` | ✓ |
+| timezone | Text | Document timezone (e.g., 'America/New_York') | `""` | |
+| documentSettings | Text | JSON settings (locale, currency, etc.) | `""` | |
 
-```
-_grist_DocInfo (id=1, singleton)
-│
-├─ _grist_Tables
-│  ├─ tableId: "MyTable"
-│  ├─ primaryViewId → _grist_Views
-│  ├─ rawViewSectionRef → _grist_Views_section
-│  └─ recordCardViewSectionRef → _grist_Views_section
-│  │
-│  └─ _grist_Tables_column (parentId → _grist_Tables)
-│     ├─ colId, type, formula
-│     ├─ displayCol → _grist_Tables_column (helper column)
-│     ├─ visibleCol → _grist_Tables_column (displayed field in Ref)
-│     ├─ reverseCol → _grist_Tables_column (two-way reference)
-│     ├─ rules → RefList:_grist_Tables_column (conditional formatting)
-│     └─ recalcDeps → RefList:_grist_Tables_column
-│
-├─ _grist_Pages (pagePos, indentation for hierarchy)
-│  ├─ viewRef → _grist_Views
-│  └─ shareRef → _grist_Shares
-│  │
-│  └─ _grist_Views (parentId from _grist_Pages)
-│     ├─ name, layoutSpec
-│     │
-│     └─ _grist_Views_section (parentId → _grist_Views)
-│        ├─ tableRef → _grist_Tables
-│        ├─ parentKey: "list" | "detail" | "single" | "chart"
-│        ├─ linkSrcSectionRef → _grist_Views_section (section linking)
-│        ├─ rules → RefList:_grist_Tables_column
-│        │
-│        ├─ _grist_Views_section_field (parentId → _grist_Views_section)
-│        │  ├─ colRef → _grist_Tables_column
-│        │  ├─ displayCol, visibleCol → _grist_Tables_column
-│        │  └─ rules → RefList:_grist_Tables_column
-│        │
-│        └─ _grist_Filters (viewSectionRef → _grist_Views_section)
-│           ├─ colRef → _grist_Tables_column
-│           └─ filter: JSON filter spec
-│
-├─ _grist_ACLResources (tableId, colIds)
-│  │
-│  └─ _grist_ACLRules (resource → _grist_ACLResources)
-│     ├─ aclFormula, permissionsText
-│     └─ userAttributes: JSON
-│
-├─ _grist_Triggers (tableRef → _grist_Tables)
-│  ├─ eventTypes, actions
-│  └─ watchedColRefList → RefList:_grist_Tables_column
-│
-├─ _grist_Shares (linkId)
-│  └─ options, label, description
-│
-├─ _grist_Attachments (fileIdent → _gristsys_Files)
-│  └─ fileName, fileType, fileSize, fileExt
-│
-└─ _grist_Cells (tableRef, colRef, rowId)
-   ├─ type: 1 = Comments
-   ├─ content: JSON metadata
-   └─ parentId → _grist_Cells (hierarchical structure)
-```
-
----
-
-## Metadata Tables (Alphabetical)
-
-### `_grist_ACLResources`
-
-**Purpose:** Define resources (tables/columns) that ACL rules apply to.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tableId` | Text | Table name this rule applies to, or `'*'` for all tables |
-| `colIds` | Text | Comma-separated list of column IDs, or `'*'` for all columns |
-
-**Notes:**
-- The special resource with `tableId=''` and `colIds=''` should be ignored (exists for backwards compatibility)
-- Resources are referenced by `_grist_ACLRules.resource`
-
-**Example:**
-```
-tableId='MyTable', colIds='*'           → All columns in MyTable
-tableId='*', colIds='*'                 → All tables and columns (default resource)
-tableId='Users', colIds='Email,Phone'   → Specific columns in Users table
-```
-
----
-
-### `_grist_ACLRules`
-
-**Purpose:** Access control rules defining permissions for document resources.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `resource` | Ref:_grist_ACLResources | The resource this rule applies to |
-| `permissions` | Int | **DEPRECATED:** Use `permissionsText` instead |
-| `principals` | Text | **DEPRECATED** |
-| `aclFormula` | Text | Match formula in restricted Python syntax; empty string for default rule |
-| `aclColumn` | Ref:_grist_Tables_column | **DEPRECATED** |
-| `aclFormulaParsed` | Text | JSON representation of the parse tree of `aclFormula`; empty for default |
-| `permissionsText` | Text | Permissions string in format `[+bits][-bits]` (see below) |
-| `rulePos` | PositionNumber | Rule order (rules processed in increasing order) |
-| `userAttributes` | Text | JSON defining user attribute lookups (see below) |
-| `memo` | Text | Comments/notes about this rule (added in schema v35) |
-
-**Permission Characters:**
-- `C` = Create
-- `R` = Read
-- `U` = Update
-- `D` = Delete
-- `S` = Schema edit
-
-**Permission Format Examples:**
-```
-'+R'              → Grant read-only access
-'+CRUD'           → Grant create, read, update, delete
-'-D'              → Deny delete
-'+CRUD-D'         → Grant CRU, deny D
-'all'             → Grant all permissions
-'none'            → Deny all permissions
-```
-
-**User Attributes Format:**
-When non-empty, `userAttributes` contains JSON like:
+**Example**:
 ```json
 {
-  "name": "Students",
-  "tableId": "StudentRoster",
-  "lookupColId": "Email",
-  "charId": "Email"
+  "id": 1,
+  "schemaVersion": 44,
+  "timezone": "America/New_York",
+  "documentSettings": "{\"locale\":\"en-US\"}"
 }
 ```
-This looks up `user.Email` in `StudentRoster.Email` and makes the full record available as `user.Students` in ACL formulas.
 
-**Rule Ordering:**
-- Rules for a resource are ordered by increasing `rulePos`
-- User attribute rules (tied to resource `*:*`) should be listed first
-- Default rule should be at the end
-
-**Related:** See `_grist_ACLResources`, source at `sandbox/grist/schema.py:271`
+**Source**: `sandbox/grist/schema.py:29`
 
 ---
 
-### `_grist_Attachments`
+### _grist_Tables
 
-**Purpose:** Metadata for file attachments in the document.
+Registry of all user tables (excludes metadata tables).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `fileIdent` | Text | Checksum of file contents; identifies file data in `_gristsys_Files` |
-| `fileName` | Text | User-defined filename |
-| `fileType` | Text | MIME type (e.g., `image/png`, `application/pdf`) |
-| `fileSize` | Int | Size in bytes |
-| `fileExt` | Text | File extension including "." prefix (e.g., `.pdf`, `.png`) (added v37) |
-| `imageHeight` | Int | Height in pixels (for images only) |
-| `imageWidth` | Int | Width in pixels (for images only) |
-| `timeDeleted` | DateTime | Timestamp when attachment was deleted (null if active) |
-| `timeUploaded` | DateTime | Timestamp when attachment was uploaded |
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| tableId | Text | Unique table identifier | `""` |
+| primaryViewId | Ref:_grist_Views | Default view | `0` |
+| summarySourceTable | Ref:_grist_Tables | Source table for summary tables | `0` |
+| onDemand | Bool | Keep data out of engine (lazy load) | `False` |
+| rawViewSectionRef | Ref:_grist_Views_section | Raw data view section | `0` |
+| recordCardViewSectionRef | Ref:_grist_Views_section | Record card section | `0` |
 
-**Notes:**
-- `fileIdent` is a checksum, allowing deduplication of identical files
-- Actual file data is stored in `_gristsys_Files` (managed by Node.js)
-- `fileExt` was added in April 2023 (schema v37); older attachments may have blank `fileExt` but extension may still be in `fileName`
-- For images, `imageHeight` and `imageWidth` are populated; null for non-images
+**Summary Tables**:
+- Have `summarySourceTable` pointing to source
+- Automatically aggregate data by group-by columns
+- Group-by columns have `summarySourceCol` set
 
-**Related:** See `_gristsys_Files` for actual file storage, source at `sandbox/grist/schema.py:240`
+**OnDemand Tables**:
+- When `onDemand=true`, data not loaded into engine
+- Fetched from database only when needed by frontend
+- Useful for large, infrequently-accessed tables
 
----
-
-### `_grist_Cells`
-
-**Purpose:** Additional metadata for individual cells (currently used for comments).
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tableRef` | Ref:_grist_Tables | The table containing this cell |
-| `colRef` | Ref:_grist_Tables_column | The column containing this cell |
-| `rowId` | Int | The row ID of this cell |
-| `root` | Bool | True if this is the root of a metadata tree |
-| `parentId` | Ref:_grist_Cells | Parent cell in hierarchical metadata structure |
-| `type` | Int | Type of metadata: `1` = Comments |
-| `content` | Text | JSON representation of the metadata |
-| `userRef` | Text | User reference |
-
-**Notes:**
-- Cell metadata is stored hierarchically
-- `root` marks the root of the tree (needed for autoremove detection)
-- Currently only type `1` (Comments) is implemented
-- The `content` field contains JSON-encoded metadata specific to the type
-
-**Related:** Source at `sandbox/grist/schema.py:347`
-
----
-
-### `_grist_DocInfo`
-
-**Purpose:** Document-wide settings and metadata (single record).
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `docId` | Text | **DEPRECATED:** Now stored in `_gristsys_FileInfo` |
-| `peers` | Text | **DEPRECATED:** Now use `_grist_ACLPrincipals` |
-| `basketId` | Text | Basket ID for online storage (if created) |
-| `schemaVersion` | Int | Document schema version (currently 44) |
-| `timezone` | Text | Document timezone (e.g., `America/New_York`, `UTC`) |
-| `documentSettings` | Text | JSON string with document settings (excluding timezone) |
-
-**Notes:**
-- This table always contains exactly **one record** with `id=1`
-- `schemaVersion` indicates which schema migrations have been applied
-- Migrations bring older documents up to `SCHEMA_VERSION` (defined in `schema.py`)
-- `documentSettings` may include locale, currency format, etc.
-
-**Related:** Source at `sandbox/grist/schema.py:29`
-
----
-
-### `_grist_Filters`
-
-**Purpose:** Column filters for view sections.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `viewSectionRef` | Ref:_grist_Views_section | The view section this filter applies to |
-| `colRef` | Ref:_grist_Tables_column | The column being filtered |
-| `filter` | Text | JSON filter specification (see below) |
-| `pinned` | Bool | If true, show in filter bar (added v34) |
-
-**Filter JSON Format:**
-The `filter` field contains JSON with either `included` or `excluded` arrays:
-
+**Example**:
 ```json
-{"included": ["foo", "bar"]}
+{
+  "id": 1,
+  "tableId": "People",
+  "primaryViewId": 5,
+  "summarySourceTable": 0,
+  "onDemand": false
+}
 ```
-or
+
+**Source**: `sandbox/grist/schema.py:47`
+
+---
+
+### _grist_Tables_column
+
+Complete column definitions including formulas, types, and display settings.
+
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| parentId | Ref:_grist_Tables | Parent table | `0` |
+| parentPos | PositionNumber | Column order | `inf` |
+| colId | Text | Column identifier | `""` |
+| type | Text | Column type (Text, Numeric, Ref:Table, etc.) | `""` |
+| widgetOptions | Text | JSON widget configuration | `""` |
+| isFormula | Bool | True for formula columns | `False` |
+| formula | Text | Python formula code | `""` |
+| label | Text | Display label | `""` |
+| description | Text | Column description | `""` |
+| untieColIdFromLabel | Bool | Prevent auto-update of colId from label | `False` |
+| summarySourceCol | Ref:_grist_Tables_column | Source column for summary | `0` |
+| displayCol | Ref:_grist_Tables_column | Display helper column | `0` |
+| visibleCol | Ref:_grist_Tables_column | Column to show in Ref | `0` |
+| rules | RefList:_grist_Tables_column | Conditional formatting rules | `None` |
+| reverseCol | Ref:_grist_Tables_column | Reverse reference column | `0` |
+| recalcWhen | Int | When to recalculate (0=DEFAULT, 1=NEVER, 2=MANUAL_UPDATES) | `0` |
+| recalcDeps | RefList:_grist_Tables_column | Trigger fields for recalc | `None` |
+
+**RecalcWhen Values**:
+- `0` (DEFAULT): Calculate on new records or when recalcDeps changes
+- `1` (NEVER): Manual trigger only
+- `2` (MANUAL_UPDATES): On new records and manual updates
+
+**Reference Column Flow**:
+```
+Orders.customer (Ref:People)
+  ├─ visibleCol → People.name (colId: 25)
+  └─ displayCol → Orders._gristHelper_Display_customer (colId: 28)
+                    └─ formula: "$customer.name"
+```
+
+**Example**:
 ```json
-{"excluded": ["apple", "orange"]}
+{
+  "id": 5,
+  "parentId": 1,
+  "parentPos": 2.5,
+  "colId": "total",
+  "type": "Numeric",
+  "isFormula": true,
+  "formula": "$quantity * $price",
+  "label": "Total"
+}
 ```
 
-**Notes:**
-- Added in schema v25 (replaced deprecated `_grist_Views_section_field.filter`)
-- `pinned` filters display a button in the filter bar
-- Multiple filters can be applied to the same section
-
-**Related:** See `_grist_Views_section`, source at `sandbox/grist/schema.py:333`
+**Source**: `sandbox/grist/schema.py:63`
 
 ---
 
-### `_grist_Pages`
+## View Tables
 
-**Purpose:** Page tree hierarchy and navigation structure.
+### _grist_Pages
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `viewRef` | Ref:_grist_Views | The view associated with this page |
-| `indentation` | Int | Nesting level (depth in page tree) |
-| `pagePos` | PositionNumber | Overall position when all pages are visible (uncollapsed) |
-| `shareRef` | Ref:_grist_Shares | Associated share (added v41) |
-| `options` | Text | JSON options (added v44) |
+Page hierarchy (tree structure).
 
-**Understanding Page Hierarchy:**
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| viewRef | Ref:_grist_Views | Associated view | `0` |
+| indentation | Int | Nesting level (depth) | `0` |
+| pagePos | PositionNumber | Position when expanded | `inf` |
+| shareRef | Ref:_grist_Shares | Share configuration | `0` |
+| options | Text | JSON page options | `""` |
 
-Pages form a tree structure represented by `pagePos` (position) and `indentation` (depth). Parent-child relationships are inferred from consecutive `indentation` values:
+**Hierarchy Rules**:
+- Indentation difference of **+1**: Child of previous page
+- Indentation difference of **0**: Sibling
+- Indentation difference of **-1**: Sibling of parent
 
-- **+1 indentation**: Child of previous page
-- **0 indentation**: Sibling of previous page
-- **-1 indentation**: Sibling of previous page's parent
-
-**Example:**
-
-| pagePos | indentation | viewRef | Relationship |
-|---------|-------------|---------|--------------|
-| 1.0 | 0 | Dashboard | Root page |
-| 2.0 | 1 | Sales | Child of Dashboard |
-| 3.0 | 1 | Marketing | Child of Dashboard (sibling of Sales) |
-| 4.0 | 2 | Campaigns | Child of Marketing |
-| 5.0 | 0 | Reports | Root page (sibling of Dashboard) |
-
+**Example**:
 ```
-Dashboard (0)
-├─ Sales (1)
-└─ Marketing (1)
-   └─ Campaigns (2)
-Reports (0)
+pagePos | indent | Relationship
+--------|--------|-------------
+1.0     | 0      | Root
+2.0     | 1      | Child of page 1
+3.0     | 1      | Sibling of page 2
+4.0     | 2      | Child of page 3
+5.0     | 0      | Root (sibling of page 1)
 ```
 
-**Related:** See `_grist_Views`, `_grist_Shares`, source at `sandbox/grist/schema.py:164`
-
----
-
-### `_grist_Shares`
-
-**Purpose:** Document share links with access options.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `linkId` | Text | Share identifier (common to home DB and document, not secret) |
-| `options` | Text | JSON share options |
-| `label` | Text | User-friendly label for this share |
-| `description` | Text | Description of this share |
-
-**Notes:**
-- Added in schema v41
-- `linkId` is used to match records between home database and document
-- The actual secret share URL key is stored in the home database (`shares` table)
-- Share options may include form settings, access restrictions, etc.
-
-**Related:** See `_grist_Pages.shareRef`, home DB schema in `documentation/database.md`
-
----
-
-### `_grist_Tables`
-
-**Purpose:** Registry of all user tables (not including built-in metadata tables).
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tableId` | Text | Unique table identifier (used in formulas and API) |
-| `primaryViewId` | Ref:_grist_Views | Default view for this table |
-| `summarySourceTable` | Ref:_grist_Tables | For summary tables, points to source table |
-| `onDemand` | Bool | Keep data out of data engine (load only when requested) |
-| `rawViewSectionRef` | Ref:_grist_Views_section | Raw data view section |
-| `recordCardViewSectionRef` | Ref:_grist_Views_section | Record card view section (added v40) |
-
-**Key Concepts:**
-
-**Summary Tables:**
-- Created via "Add to Page" → "Summary Table"
-- `summarySourceTable` points to the source table
-- Summary tables aggregate data by group-by columns
-- Group-by columns have `summarySourceCol` set in `_grist_Tables_column`
-
-**OnDemand Tables:**
-- When `onDemand=true`, table data is not loaded into data engine by default
-- Data is fetched from database only when needed by frontend
-- Useful for large tables that are infrequently accessed
-
-**Related:** See `_grist_Tables_column`, `_grist_Views`, source at `sandbox/grist/schema.py:47`
-
----
-
-### `_grist_Tables_column`
-
-**Purpose:** Complete column definitions including type, formulas, and relationships.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `parentId` | Ref:_grist_Tables | Parent table |
-| `parentPos` | PositionNumber | Column order/position |
-| `colId` | Text | Column identifier (used in formulas) |
-| `type` | Text | Column type (see Column Types section) |
-| `widgetOptions` | Text | JSON widget options (formatting, etc.) |
-| `isFormula` | Bool | True if this is a formula column |
-| `formula` | Text | Formula code (Python syntax) |
-| `label` | Text | Display label (shown in UI) |
-| `description` | Text | Column description (added v36) |
-| `untieColIdFromLabel` | Bool | If true, prevent auto-updating `colId` when `label` changes |
-| `summarySourceCol` | Ref:_grist_Tables_column | For summary table group-by columns, points to source column |
-| `displayCol` | Ref:_grist_Tables_column | Helper column for displaying reference values |
-| `visibleCol` | Ref:_grist_Tables_column | For Ref columns, column in target table to display |
-| `rules` | RefList:_grist_Tables_column | Conditional formatting rule columns |
-| `reverseCol` | Ref:_grist_Tables_column | For two-way references (added v43) |
-| `recalcWhen` | Int | When to recalculate (see RecalcWhen below) |
-| `recalcDeps` | RefList:_grist_Tables_column | Trigger fields for recalculation |
-
-**RecalcWhen Values:**
-
-Determines when a formula in a data column (`isFormula=false`) is recalculated:
-
-| Value | Constant | Behavior |
-|-------|----------|----------|
-| 0 | `DEFAULT` | Calculate on new records or when any field in `recalcDeps` changes |
-| 1 | `NEVER` | Don't calculate automatically (manual trigger only) |
-| 2 | `MANUAL_UPDATES` | Calculate on new records and manual updates to any data field |
-
-**Reference Column Relationships:**
-
-When you create a Reference column pointing to table `People`:
-
-1. **visibleCol**: Points to `People.Name` (the column to display in the target table)
-2. **displayCol**: Points to helper column `_gristHelper_Display` in the current table
-3. The helper column has formula `$person.Name` to fetch the display value
-
-**Two-Way References (v43+):**
-
-If column `A.person` references `People` table, you can set `A.person.reverseCol` to point to `People.orders`. Then `People.orders` automatically contains all `A` records where `person` points to that `People` record.
-
-**Conditional Formatting Rules:**
-
-The `rules` field contains a RefList pointing to hidden formula columns that return styling information based on cell values.
-
-**Related:** Source at `sandbox/grist/schema.py:63`
-
----
-
-### `_grist_Triggers`
-
-**Purpose:** Webhook triggers that fire on table changes.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tableRef` | Ref:_grist_Tables | Table being monitored |
-| `eventTypes` | ChoiceList | Event types to monitor (e.g., `add`, `update`) |
-| `isReadyColRef` | Ref:_grist_Tables_column | Optional ready-flag column |
-| `actions` | Text | JSON array of action definitions |
-| `label` | Text | User-friendly label (added v39) |
-| `memo` | Text | Description/notes (added v39) |
-| `enabled` | Bool | Enable/disable this trigger (added v39) |
-| `watchedColRefList` | RefList:_grist_Tables_column | Specific columns to monitor (added v42) |
-| `options` | Text | JSON options (added v42) |
-
-**Event Types:**
-- `add`: Trigger when records are added
-- `update`: Trigger when records are updated
-
-**Ready Column:**
-- If `isReadyColRef` is set, trigger only fires when that column's value is truthy
-- Useful for "approval" workflows
-
-**Actions Format:**
-The `actions` field contains JSON defining webhook URLs and payloads:
-```json
-[
-  {
-    "type": "webhook",
-    "url": "https://example.com/webhook",
-    "body": "..."
-  }
-]
+Results in:
+```
+Page 1
+├─ Page 2
+└─ Page 3
+   └─ Page 4
+Page 5
 ```
 
-**Watched Columns (v42+):**
-- If `watchedColRefList` is set, trigger only fires when those specific columns change
-- Empty list means watch all columns
-
-**Related:** See `_grist_Tables`, source at `sandbox/grist/schema.py:259`
+**Source**: `sandbox/grist/schema.py:164`
 
 ---
 
-### `_grist_Views`
+### _grist_Views
 
-**Purpose:** View definitions (pages can contain one or more sections).
+View definitions.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `name` | Text | View name (displayed in UI) |
-| `type` | Text | View type (may be deprecated/unused) |
-| `layoutSpec` | Text | JSON describing view layout |
+| name | Text | View name |
+| type | Text | View type (may be deprecated) |
+| layoutSpec | Text | JSON layout specification |
 
-**Layout Specification:**
-
-The `layoutSpec` is a JSON structure defining how sections are arranged:
-
+**LayoutSpec Example**:
 ```json
 {
   "type": "vertical",
@@ -501,301 +257,415 @@ The `layoutSpec` is a JSON structure defining how sections are arranged:
 }
 ```
 
-Layout types include:
-- `vertical`: Stack sections vertically
-- `horizontal`: Arrange sections side-by-side
-- `section`: Leaf node referencing a view section
-
-**Related:** See `_grist_Views_section`, `_grist_Pages`, source at `sandbox/grist/schema.py:173`
+**Source**: `sandbox/grist/schema.py:173`
 
 ---
 
-### `_grist_Views_section`
+### _grist_Views_section
 
-**Purpose:** Sections within views (e.g., list view, detail view, chart).
+View sections (widgets on pages).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| `tableRef` | Ref:_grist_Tables | Table displayed in this section |
-| `parentId` | Ref:_grist_Views | Parent view |
-| `parentKey` | Text | Section type: `list`, `detail`, `single`, `chart`, `form` |
-| `title` | Text | Section title |
-| `description` | Text | Section description (added v39) |
-| `defaultWidth` | Int | Default width (formula: `100`) |
-| `borderWidth` | Int | Border width (formula: `1`) |
-| `theme` | Text | Theme identifier |
-| `options` | Text | JSON options (widget-specific settings) |
-| `chartType` | Text | Chart type if `parentKey='chart'` (e.g., `bar`, `line`) |
-| `layoutSpec` | Text | JSON record layout (for detail/card views) |
-| `filterSpec` | Text | **DEPRECATED** (v15) - Do not reuse |
-| `sortColRefs` | Text | Sorting specification |
-| `linkSrcSectionRef` | Ref:_grist_Views_section | Source section for section linking |
-| `linkSrcColRef` | Ref:_grist_Tables_column | Source column for linking |
-| `linkTargetColRef` | Ref:_grist_Tables_column | Target column for linking |
-| `embedId` | Text | **DEPRECATED** (v12) - Do not reuse |
-| `rules` | RefList:_grist_Tables_column | Conditional formatting rules |
-| `shareOptions` | Text | Share-specific options (added v41) |
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| tableRef | Ref:_grist_Tables | Table displayed | `0` |
+| parentId | Ref:_grist_Views | Parent view | `0` |
+| parentKey | Text | Section type | `""` |
+| title | Text | Section title | `""` |
+| description | Text | Section description | `""` |
+| defaultWidth | Int | Default column width | `100` |
+| borderWidth | Int | Border width | `1` |
+| theme | Text | Theme identifier | `""` |
+| options | Text | JSON options | `""` |
+| chartType | Text | Chart type (for charts) | `""` |
+| layoutSpec | Text | Record layout JSON | `""` |
+| filterSpec | Text | **DEPRECATED** (v15) | `""` |
+| sortColRefs | Text | Sort column refs (JSON array) | `""` |
+| linkSrcSectionRef | Ref:_grist_Views_section | Linked source section | `0` |
+| linkSrcColRef | Ref:_grist_Tables_column | Linked source column | `0` |
+| linkTargetColRef | Ref:_grist_Tables_column | Linked target column | `0` |
+| embedId | Text | **DEPRECATED** (v12) | `""` |
+| rules | RefList:_grist_Tables_column | Conditional formatting | `None` |
+| shareOptions | Text | Share-specific options | `""` |
 
-**Section Types (parentKey):**
+**Section Types (parentKey)**:
 - `list`: Table/card list view
 - `detail`: Single record detail view
 - `single`: Single record (no scrolling)
 - `chart`: Chart visualization
 - `form`: Form view
 
-**Section Linking:**
+**Section Linking**:
+Linking allows selecting a record in one section to filter another:
+- `linkSrcSectionRef`: Source section
+- `linkSrcColRef`: Column in source
+- `linkTargetColRef`: Column in this section's table to match
 
-Sections can be linked so selecting a record in one section filters another:
-- `linkSrcSectionRef`: Points to the source section
-- `linkSrcColRef`: Column in source section
-- `linkTargetColRef`: Column in this section's table to match against
-
-**Example:** A `People` list section linked to an `Orders` detail section via `Orders.person` reference column.
-
-**Sort Specification:**
-
-`sortColRefs` is a JSON array of column references with optional `-` prefix for descending:
+**Sort Format**:
 ```json
-[1, -3, 5]  // Sort by col 1 (asc), then col 3 (desc), then col 5 (asc)
+[1, -3, 5]  // Col 1 (asc), Col 3 (desc), Col 5 (asc)
 ```
 
-**Related:** See `_grist_Views_section_field`, `_grist_Filters`, source at `sandbox/grist/schema.py:182`
+**Source**: `sandbox/grist/schema.py:182`
 
 ---
 
-### `_grist_Views_section_field`
+### _grist_Views_section_field
 
-**Purpose:** Field display settings within view sections (column visibility, width, widget options).
+Field display settings within sections.
+
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| parentId | Ref:_grist_Views_section | Parent section | `0` |
+| parentPos | PositionNumber | Field order | `inf` |
+| colRef | Ref:_grist_Tables_column | Column displayed | `0` |
+| width | Int | Field width (pixels) | `0` |
+| widgetOptions | Text | JSON widget options | `""` |
+| displayCol | Ref:_grist_Tables_column | Display column override | `0` |
+| visibleCol | Ref:_grist_Tables_column | Visible column override | `0` |
+| filter | Text | **DEPRECATED** (v25) | `""` |
+| rules | RefList:_grist_Tables_column | Conditional formatting | `None` |
+
+**Source**: `sandbox/grist/schema.py:209`
+
+---
+
+### _grist_Filters
+
+Filter configurations for view sections.
+
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| viewSectionRef | Ref:_grist_Views_section | Target section | `0` |
+| colRef | Ref:_grist_Tables_column | Column filtered | `0` |
+| filter | Text | JSON filter spec | `""` |
+| pinned | Bool | Show in filter bar | `False` |
+
+**Filter Format**:
+```json
+{"included": ["value1", "value2"]}
+// or
+{"excluded": ["value3", "value4"]}
+```
+
+**Source**: `sandbox/grist/schema.py:333`
+
+---
+
+## Access Control Tables
+
+### _grist_ACLResources
+
+Resource definitions for ACL rules.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `parentId` | Ref:_grist_Views_section | Parent section |
-| `parentPos` | PositionNumber | Field order/position in section |
-| `colRef` | Ref:_grist_Tables_column | Column being displayed |
-| `width` | Int | Field width in pixels |
-| `widgetOptions` | Text | JSON widget options (overrides column options) |
-| `displayCol` | Ref:_grist_Tables_column | Display column override |
-| `visibleCol` | Ref:_grist_Tables_column | Visible column override (for Ref columns) |
-| `filter` | Text | **DEPRECATED** (v25) - Use `_grist_Filters` |
-| `rules` | RefList:_grist_Tables_column | Conditional formatting rules |
+| tableId | Text | Table name or '*' for all |
+| colIds | Text | Column IDs (comma-separated) or '*' |
 
-**Widget Options:**
+**Examples**:
+```
+tableId='*', colIds='*'              → All tables/columns
+tableId='People', colIds='*'         → All columns in People
+tableId='People', colIds='Email,Phone' → Specific columns
+```
 
-The `widgetOptions` field contains JSON specific to the widget type:
+**Special Case**: Resource with `tableId=''` and `colIds=''` should be ignored (compatibility).
 
+**Source**: `sandbox/grist/schema.py:271`
+
+---
+
+### _grist_ACLRules
+
+Access control rules.
+
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| resource | Ref:_grist_ACLResources | Target resource | `0` |
+| permissions | Int | **DEPRECATED** | `0` |
+| principals | Text | **DEPRECATED** | `""` |
+| aclFormula | Text | Match formula (restricted Python) | `""` |
+| aclColumn | Ref:_grist_Tables_column | **DEPRECATED** | `0` |
+| aclFormulaParsed | Text | JSON parse tree | `""` |
+| permissionsText | Text | Permission specification | `""` |
+| rulePos | PositionNumber | Rule order | `inf` |
+| userAttributes | Text | JSON user attribute definition | `""` |
+| memo | Text | Rule description | `""` |
+
+**Permission Format**:
+- Format: `[+bits][-bits]`
+- Bits: C (Create), R (Read), U (Update), D (Delete), S (Schema)
+- Special: `'all'`, `'none'`
+- Examples: `'+R'`, `'+CRUD'`, `'+R-U'`, `'all'`
+
+**User Attributes**:
 ```json
 {
-  "alignment": "right",
-  "numMode": "currency",
-  "decimals": 2
+  "name": "Students",
+  "tableId": "StudentRoster",
+  "lookupColId": "Email",
+  "charId": "Email"
 }
 ```
+Looks up `user.Email` in `StudentRoster.Email`, makes record available as `user.Students`.
 
-**Display Overrides:**
-
-`displayCol` and `visibleCol` allow per-field customization of reference display (overriding column-level settings).
-
-**Related:** See `_grist_Views_section`, `_grist_Tables_column`, source at `sandbox/grist/schema.py:209`
+**Source**: `sandbox/grist/schema.py:271`
 
 ---
 
-## Deprecated Metadata Tables
+## Feature Tables
 
-The following tables exist in the schema for backwards compatibility but are no longer actively used:
+### _grist_Attachments
 
-### `_grist_Imports`
-**Status:** Deprecated
-**Previous Purpose:** Import options for CSV/Excel imports
-**Source:** `sandbox/grist/schema.py:103`
+File attachment metadata.
 
-### `_grist_External_database`
-**Status:** Deprecated
-**Previous Purpose:** External database credentials
-**Source:** `sandbox/grist/schema.py:123`
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| fileIdent | Text | Checksum (identifies file in _gristsys_Files) | `""` |
+| fileName | Text | User-defined filename | `""` |
+| fileType | Text | MIME type | `""` |
+| fileSize | Int | Size in bytes | `0` |
+| fileExt | Text | Extension with "." prefix | `""` |
+| imageHeight | Int | Height in pixels (images only) | `0` |
+| imageWidth | Int | Width in pixels (images only) | `0` |
+| timeDeleted | DateTime | When deleted (soft delete) | `None` |
+| timeUploaded | DateTime | When uploaded | `None` |
 
-### `_grist_External_table`
-**Status:** Deprecated
-**Previous Purpose:** External table references
-**Source:** `sandbox/grist/schema.py:133`
+**Notes**:
+- `fileIdent` is a checksum for deduplication
+- Actual file data in `_gristsys_Files`
+- `fileExt` added in v37 (April 2023)
 
-### `_grist_TableViews`
-**Status:** Deprecated
-**Previous Purpose:** Table-View cross-reference
-**Source:** `sandbox/grist/schema.py:140`
-
-### `_grist_TabItems`
-**Status:** Deprecated
-**Previous Purpose:** Tab items
-**Source:** `sandbox/grist/schema.py:146`
-
-### `_grist_TabBar`
-**Status:** Partially deprecated
-**Previous Purpose:** Tab bar items
-**Source:** `sandbox/grist/schema.py:151`
-**Note:** Largely replaced by `_grist_Pages`
-
-### `_grist_ACLPrincipals`
-**Status:** Deprecated
-**Previous Purpose:** ACL principals (users, groups, instances)
-**Source:** `sandbox/grist/schema.py:315`
-
-### `_grist_ACLMemberships`
-**Status:** Deprecated
-**Previous Purpose:** ACL membership relationships
-**Source:** `sandbox/grist/schema.py:328`
-
-### `_grist_Validations`
-**Status:** Deprecated
-**Previous Purpose:** Validation rules
-**Source:** `sandbox/grist/schema.py:226`
-
-### `_grist_REPL_Hist`
-**Status:** Deprecated
-**Previous Purpose:** REPL history
-**Source:** `sandbox/grist/schema.py:233`
+**Source**: `sandbox/grist/schema.py:240`
 
 ---
 
-## Column Type Details
+### _grist_Triggers
 
-Grist supports the following column types (defined in `app/plugin/GristData.ts:67`):
+Webhook triggers for table changes.
 
-### Basic Types
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| tableRef | Ref:_grist_Tables | Table monitored | `0` |
+| eventTypes | ChoiceList | Events ('add', 'update') | `None` |
+| isReadyColRef | Ref:_grist_Tables_column | Ready flag column | `0` |
+| actions | Text | JSON action array | `""` |
+| label | Text | User-friendly label | `""` |
+| memo | Text | Description | `""` |
+| enabled | Bool | Is trigger active | `False` |
+| watchedColRefList | RefList:_grist_Tables_column | Specific columns to watch | `None` |
+| options | Text | JSON options | `""` |
 
-| Type | Description | Example Values |
-|------|-------------|----------------|
-| `Text` | Text string | `"hello"`, `""` |
-| `Int` | Integer number | `42`, `-17`, `0` |
-| `Numeric` | Decimal number | `3.14`, `-0.5`, `1e6` |
-| `Bool` | Boolean | `true`, `false` |
-| `Date` | Date (no time) | Stored as days since epoch |
-| `DateTime` | Date and time | Stored as seconds since epoch + timezone |
+**Event Types**:
+- `'add'`: New records
+- `'update'`: Record changes
 
-### Specialized Types
-
-| Type | Description | Example Values |
-|------|-------------|----------------|
-| `Choice` | Single choice from list | `"Option1"` |
-| `ChoiceList` | Multiple choices | Encoded as `['L', 'Option1', 'Option2']` |
-| `Ref:TableId` | Reference to another table | Row ID as integer |
-| `RefList:TableId` | List of references | Encoded as `['L', rowId1, rowId2]` |
-| `Attachments` | File attachments | Encoded as `['L', attachId1, attachId2]` |
-
-### Special Types
-
-| Type | Description | Usage |
-|------|-------------|-------|
-| `Id` | Row identifier | Auto-generated, unique per table |
-| `ManualSortPos` | Manual sort position | Used for drag-drop reordering |
-| `PositionNumber` | Fractional position | Used in metadata tables for ordering |
-| `Any` | Any type | Dynamic typing |
-| `Blob` | Binary data | Raw bytes |
-
-### Type Encoding Examples
-
-Grist uses special encoding for complex values (via `GristObjCode`):
-
-```javascript
-// ChoiceList
-['L', 'Red', 'Blue', 'Green']
-
-// RefList
-['L', 15, 23, 42]  // References to rows 15, 23, 42
-
-// DateTime (with timezone)
-['D', 1609459200, 'America/New_York']  // [timestamp, timezone]
-
-// Date
-['d', 18628]  // Days since epoch
-
-// Reference (alternate encoding)
-['R', 'TableId', 42]  // [tableId, rowId]
+**Actions Format**:
+```json
+[
+  {
+    "type": "webhook",
+    "url": "https://example.com/hook"
+  }
+]
 ```
 
-**GristObjCode Reference:**
-
-| Code | Name | Meaning |
-|------|------|---------|
-| `L` | List | Array/list of values |
-| `l` | LookUp | Lookup result |
-| `O` | Dict | Dictionary/object |
-| `D` | DateTime | DateTime with timezone `[timestamp, tz]` |
-| `d` | Date | Date as `[days_since_epoch]` |
-| `S` | Skip | Skipped value |
-| `C` | Censored | Censored (hidden) value |
-| `R` | Reference | Reference as `[tableId, rowId]` |
-| `r` | ReferenceList | List of references |
-| `E` | Exception | Error/exception value |
-| `P` | Pending | Value not yet loaded |
-| `U` | Unmarshallable | Cannot be unmarshalled |
-| `V` | Versions | Version information |
+**Source**: `sandbox/grist/schema.py:259`
 
 ---
 
-## Schema Evolution
+### _grist_Shares
 
-Grist documents track their schema version in `_grist_DocInfo.schemaVersion`. When a document is opened, migrations are automatically applied to bring it up to the current `SCHEMA_VERSION` (44).
+Public share configurations.
 
-**Migration Philosophy:**
-- Never remove columns (may break existing formulas/code)
-- Mark deprecated columns in comments
-- Add new columns with appropriate defaults
-- Migrations defined in `sandbox/grist/migrations.py`
+| Column | Type | Description |
+|--------|------|-------------|
+| linkId | Text | Share identifier |
+| options | Text | JSON share options |
+| label | Text | User-friendly label |
+| description | Text | Share description |
 
-### Recent Schema Versions
-
-| Version | Changes | Date |
-|---------|---------|------|
-| **44** | Added `options` to `_grist_Pages` | 2024 |
-| **43** | Added `reverseCol` to `_grist_Tables_column` (two-way references) | 2024 |
-| **42** | Added `watchedColRefList` and `options` to `_grist_Triggers` | 2023 |
-| **41** | Added `_grist_Shares` table; `shareRef` to `_grist_Pages`; `shareOptions` to sections | 2023 |
-| **40** | Added `recordCardViewSectionRef` to `_grist_Tables` | 2023 |
-| **39** | Added `label`, `memo`, `enabled` to triggers; `description` to sections | 2022 |
-| **37** | Added `fileExt` to `_grist_Attachments` | 2023 |
-| **36** | Added `description` to `_grist_Tables_column` | 2022 |
-| **35** | Added `memo` to `_grist_ACLRules` | 2022 |
-| **34** | Added `pinned` to `_grist_Filters` | 2021 |
-| **25** | Added `_grist_Filters` table (replaced section field filters) | 2020 |
-
-For complete migration history, see `sandbox/grist/migrations.py` or `documentation/migrations.md`.
+**Source**: `sandbox/grist/schema.py` (added v41)
 
 ---
 
-## System Tables (_gristsys_*)
+### _grist_Cells
 
-System tables are managed by the Node.js process (not the Python data engine). These tables handle low-level document storage and action history.
+Cell-level metadata (currently: comments).
 
-**Defined in:** `app/server/lib/DocStorage.ts`
+| Column | Type | Description | Default |
+|--------|------|-------------|---------|
+| tableRef | Ref:_grist_Tables | Table containing cell | `0` |
+| colRef | Ref:_grist_Tables_column | Column containing cell | `0` |
+| rowId | Int | Row ID | `0` |
+| root | Bool | Is root node | `False` |
+| parentId | Ref:_grist_Cells | Parent metadata node | `0` |
+| type | Int | Metadata type (1=Comments) | `0` |
+| content | Text | JSON metadata | `""` |
+| userRef | Text | User who created | `""` |
 
-| Table | Purpose |
-|-------|---------|
-| `_gristsys_Files` | Binary file storage (for attachments) |
-| `_gristsys_FileInfo` | Document metadata (single row with docId, etc.) |
-| `_gristsys_ActionHistory` | User action history |
-| `_gristsys_ActionHistoryBranch` | Action history branches (for undo/redo) |
-| `_gristsys_PluginData` | Plugin data storage |
-| `_gristsys_Action` | **DEPRECATED:** Legacy action storage |
-| `_gristsys_Action_step` | **DEPRECATED:** Legacy action steps |
+**Hierarchy**:
+- Tree structure (root + children)
+- Root nodes: `root=True`
+- Autoremove: When all children deleted, parent deleted
+
+**Source**: `sandbox/grist/schema.py:347`
 
 ---
 
-## Common Query Examples
+## Data Types
+
+### Simple Types
+
+| Type | Storage | Default | Description |
+|------|---------|---------|-------------|
+| Text | string | `''` | Text data |
+| Int | integer | `0` | Integer (-2^53 to 2^53) |
+| Numeric | float | `0.0` | Floating point |
+| Bool | boolean | `False` | Boolean |
+| Date | float | `None` | Date (timestamp) |
+| DateTime | float | `None` | Date+time (timestamp) |
+| Choice | string | `''` | Single choice |
+| Blob | bytes | `None` | Binary data |
+| Any | any | `None` | Any value type |
+| Id | integer | `0` | Row ID (auto) |
+
+### Reference Types
+
+| Type | Format | Default | Description |
+|------|--------|---------|-------------|
+| Ref:Table | integer | `0` | Reference to row (**0 = null**) |
+| RefList:Table | array | `None` | List of references |
+
+### Position Types
+
+| Type | Storage | Default | Description |
+|------|---------|---------|-------------|
+| PositionNumber | float | `inf` | Fractional position |
+| ManualSortPos | float | `inf` | Manual sort position |
+
+### List Types
+
+| Type | Storage | Default | Description |
+|------|---------|---------|-------------|
+| ChoiceList | tuple | `None` | List of strings |
+| Attachments | array | `None` | List of attachment IDs |
+
+### Wire Format
+
+Complex types use encoding for transmission:
+
+| Type | Encoding | Example |
+|------|----------|---------|
+| Date | `['d', timestamp]` | `['d', 1704844800]` |
+| DateTime | `['D', timestamp, tz]` | `['D', 1704945919, 'UTC']` |
+| ChoiceList | `['L', ...]` | `['L', 'a', 'b']` |
+| RefList | `['L', ...]` | `['L', 1, 2, 3]` |
+| Reference | `['R', table, id]` | `['R', 'People', 17]` |
+| Exception | `['E', name, msg]` | `['E', 'ValueError', 'Invalid']` |
+
+**CRITICAL**: 
+- **RefList empty**: `null` (NOT `['L']`)
+- **Ref null**: `0` (NOT `null`)
+
+---
+
+## Relationships
+
+### Core Structure
+
+```mermaid
+graph LR
+    Tables[_grist_Tables] --> Columns[_grist_Tables_column]
+    Tables --> Views[_grist_Views]
+    Views --> Sections[_grist_Views_section]
+    Sections --> Fields[_grist_Views_section_field]
+    Fields --> Columns
+    Pages[_grist_Pages] --> Views
+```
+
+### Key Relationships
+
+1. **Tables → Columns**: One-to-many
+2. **Tables → Views**: One-to-many (primaryViewId)
+3. **Views → Sections**: One-to-many
+4. **Sections → Fields**: One-to-many
+5. **Section Linking**: Sections can link to other sections
+6. **Column References**:
+   - `displayCol`: Helper column for display
+   - `visibleCol`: Column to show in UI
+   - `reverseCol`: Two-way reference
+   - `rules`: Conditional formatting formulas
+
+---
+
+## Deprecated Tables
+
+These exist for backwards compatibility but should not be used:
+
+| Table | Previous Purpose | Status |
+|-------|-----------------|--------|
+| **_grist_Imports** | Import options | Deprecated |
+| **_grist_External_database** | External DB credentials | Deprecated |
+| **_grist_External_table** | External table refs | Deprecated |
+| **_grist_TableViews** | Table-View cross-ref | Deprecated |
+| **_grist_TabItems** | Tab items | Deprecated |
+| **_grist_TabBar** | Tab bar items | Partially deprecated |
+| **_grist_ACLPrincipals** | ACL principals | Deprecated |
+| **_grist_ACLMemberships** | ACL memberships | Deprecated |
+| **_grist_Validations** | Validation rules | Deprecated |
+| **_grist_REPL_Hist** | REPL history | Deprecated |
+
+---
+
+## Schema Versioning
+
+**Current Version**: 44
+
+### Migration Rules
+
+**DO NOT**:
+- Remove metadata tables or columns
+- Rename metadata tables or columns
+- Change types of existing columns
+
+**INSTEAD**:
+- Mark old columns as DEPRECATED with version comment
+- Create new columns with new names
+- Write migration to transform data
+- Remove code references to deprecated entities
+
+**Deprecation Comment Example**:
+```python
+# columnName is deprecated as of version XX. Do not remove or reuse.
+```
+
+### Compatibility
+
+Schema must support:
+- Documents from older Grist versions
+- Collaboration between different Grist versions
+- Opening upgraded documents with older versions
+
+This is why deprecated columns remain in schema.
+
+---
+
+## Query Examples
 
 ### Find all columns in a table
 
 ```sql
 SELECT colId, type, isFormula, label
 FROM _grist_Tables_column
-WHERE parentId = (SELECT id FROM _grist_Tables WHERE tableId = 'MyTable')
+WHERE parentId = (SELECT id FROM _grist_Tables WHERE tableId = 'People')
 ORDER BY parentPos;
 ```
 
-### List all pages and their views
+### List pages and views
 
 ```sql
 SELECT
-  p.id,
   p.pagePos,
   p.indentation,
   v.name AS viewName
@@ -804,20 +674,20 @@ JOIN _grist_Views v ON p.viewRef = v.id
 ORDER BY p.pagePos;
 ```
 
-### Find all Reference columns and their targets
+### Find all reference columns
 
 ```sql
 SELECT
-  t.tableId AS sourceTable,
-  c.colId AS sourceColumn,
-  c.type AS refType
+  t.tableId,
+  c.colId,
+  c.type
 FROM _grist_Tables_column c
 JOIN _grist_Tables t ON c.parentId = t.id
 WHERE c.type LIKE 'Ref:%' OR c.type LIKE 'RefList:%'
-ORDER BY t.tableId, c.parentPos;
+ORDER BY t.tableId;
 ```
 
-### Get ACL rules for a specific table
+### Get ACL rules for a table
 
 ```sql
 SELECT
@@ -825,112 +695,25 @@ SELECT
   r.aclFormula,
   r.permissionsText,
   r.memo,
-  res.tableId,
-  res.colIds
+  res.tableId
 FROM _grist_ACLRules r
 JOIN _grist_ACLResources res ON r.resource = res.id
-WHERE res.tableId = 'MyTable' OR res.tableId = '*'
+WHERE res.tableId = 'People' OR res.tableId = '*'
 ORDER BY r.rulePos;
-```
-
-### Find all summary tables and their source tables
-
-```sql
-SELECT
-  summary.tableId AS summaryTable,
-  source.tableId AS sourceTable
-FROM _grist_Tables summary
-JOIN _grist_Tables source ON summary.summarySourceTable = source.id
-WHERE summary.summarySourceTable != 0;
-```
-
-### List all triggers and their watched tables
-
-```sql
-SELECT
-  t.label,
-  t.enabled,
-  t.eventTypes,
-  tbl.tableId AS watchedTable
-FROM _grist_Triggers t
-JOIN _grist_Tables tbl ON t.tableRef = tbl.id
-ORDER BY tbl.tableId;
-```
-
-### Find columns with conditional formatting rules
-
-```sql
-SELECT
-  t.tableId,
-  c.colId,
-  c.rules
-FROM _grist_Tables_column c
-JOIN _grist_Tables t ON c.parentId = t.id
-WHERE c.rules IS NOT NULL AND c.rules != ''
-ORDER BY t.tableId, c.parentPos;
-```
-
-### Get all attachments with their details
-
-```sql
-SELECT
-  fileName,
-  fileExt,
-  fileType,
-  fileSize,
-  datetime(timeUploaded, 'unixepoch') AS uploaded,
-  CASE WHEN timeDeleted IS NULL THEN 'Active' ELSE 'Deleted' END AS status
-FROM _grist_Attachments
-ORDER BY timeUploaded DESC;
 ```
 
 ---
 
 ## Additional Resources
 
-- **Schema Definition:** `sandbox/grist/schema.py` (authoritative source)
-- **TypeScript Schema:** `app/common/schema.ts` (auto-generated)
-- **Migration Guide:** `documentation/migrations.md`
-- **Database Overview:** `documentation/database.md`
-- **Data Format Spec:** `documentation/grist-data-format.md`
-- **GristData Types:** `app/plugin/GristData.ts`
+- **Schema Definition**: `sandbox/grist/schema.py` (authoritative source)
+- **TypeScript Schema**: `app/common/schema.ts` (auto-generated)
+- **User Types**: `sandbox/grist/usertypes.py`
+- **Wire Format**: `app/plugin/GristData.ts`
+- **System Tables**: `app/server/lib/DocStorage.ts`
 
 ---
 
-## Notes for Advanced Users
-
-### Querying Metadata
-
-You can query metadata tables directly using:
-1. **Raw Data Views:** In the UI, use "Raw Data" page to browse metadata tables
-2. **SQLite CLI:** Download `.grist` file and use `sqlite3` command
-3. **API:** Use the Grist API to fetch metadata table records
-4. **Python Sandbox:** Access via `table._engine.docmodel`
-
-### Modifying Metadata
-
-**⚠️ Warning:** Direct modification of metadata tables can corrupt your document. Always:
-- Make backups before manual metadata changes
-- Use the Grist UI or API when possible
-- Test changes on a copy of your document
-- Understand the implications of foreign key relationships
-
-### Schema Inspection
-
-To inspect the full schema of a `.grist` file:
-
-```bash
-sqlite3 mydoc.grist ".schema _grist_Tables"
-```
-
-To see all metadata tables:
-
-```bash
-sqlite3 mydoc.grist ".tables" | grep "^_grist"
-```
-
----
-
-**Document Version:** Schema v44
-**Generated:** 2025-11
-**Maintainer:** Grist Labs (https://github.com/gristlabs/grist-core)
+**Schema Version**: 44
+**Last Updated**: 2025-11-15
+**Maintainer**: Grist Labs (https://github.com/gristlabs/grist-core)
