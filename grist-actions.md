@@ -74,8 +74,8 @@ Creates a new table with columns and associated views.
 ```typescript
 {
   id?: string,           // Column ID (optional, auto-generated if null)
-  type?: string,         // Column type (default: 'Text' for data cols, 'Any' for formula cols)
-  isFormula?: boolean,   // Default: true if formula provided, false otherwise
+  type?: string,         // Column type (default: 'Any' for formula cols, 'Text' for data cols)
+  isFormula?: boolean,   // Default: true (but AddTable sets to bool(formula) if not specified)
   formula?: string,      // Python expression (default: '')
   label?: string,        // Display label (default: same as id)
   widgetOptions?: string // JSON string for widget configuration
@@ -172,6 +172,40 @@ Creates a table without a primary view (no page created).
 ```typescript
 ['AddRawTable', 'DataImport']
 ```
+
+### DuplicateTable
+
+Duplicates an existing table's structure and optionally its data.
+
+**Signature**: `['DuplicateTable', existingTableId, newTableId, includeData]`
+
+**Parameters**:
+- `existingTableId` (string): Source table to duplicate
+- `newTableId` (string): New table name
+- `includeData` (boolean): If true, copies all records; if false, only structure
+
+**Examples**:
+
+Duplicate structure only:
+```typescript
+['DuplicateTable', 'Orders', 'Orders_Backup', false]
+```
+
+Duplicate with data:
+```typescript
+['DuplicateTable', 'Products', 'Products_Archive', true]
+```
+
+**Behavior**:
+- Copies all columns with their types and formulas
+- Copies view section options and descriptions
+- Updates self-referencing columns to point to new table
+- Preserves widgetOptions and visibleCol settings
+- Cannot duplicate hidden tables or summary tables
+
+**Common Errors**:
+- ❌ Cannot duplicate hidden tables: `['DuplicateTable', 'GristHidden_import', ...]`
+- ❌ Cannot duplicate summary tables
 
 ---
 
@@ -327,6 +361,114 @@ Replaces all data in a table (clears existing data and adds new rows).
   key: ['foo', 'bar'],
   value: ['data1', 'data2']
 }]
+```
+
+### BulkAddOrUpdateRecord
+
+Performs "upsert" operations: adds or updates records based on matching criteria.
+
+**Signature**: `['BulkAddOrUpdateRecord', tableId, require, colValues, options]`
+
+**Parameters**:
+- `tableId` (string): Target table
+- `require` (object): Column-oriented dict of values to match existing records
+- `colValues` (object): Column-oriented dict of values to set
+- `options` (object): Behavior configuration
+
+**Options Structure**:
+```typescript
+{
+  update?: boolean,           // Allow updating existing records (default: true)
+  add?: boolean,              // Allow adding new records (default: true)
+  on_many?: string,           // How to handle multiple matches: 'first', 'none', 'all' (default: 'first')
+  allow_empty_require?: boolean  // Allow empty require dict (default: false)
+}
+```
+
+**Behavior**:
+- For each record, looks up existing records matching all fields in `require`
+- If found and `update=true`: updates matched record(s) with `colValues`
+- If not found and `add=true`: creates new record with `{...require, ...colValues}`
+- `on_many='first'`: Update only first match (default)
+- `on_many='all'`: Update all matching records
+- `on_many='none'`: Skip if multiple matches
+
+**Examples**:
+
+Upsert based on email (update if exists, add if not):
+```typescript
+['BulkAddOrUpdateRecord', 'People',
+  // require: match on these fields
+  {
+    email: ['alice@example.com', 'bob@example.com', 'charlie@example.com']
+  },
+  // colValues: update/add these fields
+  {
+    name: ['Alice Smith', 'Bob Jones', 'Charlie Brown'],
+    status: ['active', 'active', 'inactive']
+  },
+  // options
+  {
+    on_many: 'first',
+    update: true,
+    add: true
+  }
+]
+```
+
+Only add records that don't exist (no updates):
+```typescript
+['BulkAddOrUpdateRecord', 'Products',
+  {sku: ['SKU001', 'SKU002']},
+  {name: ['Widget', 'Gadget'], price: [9.99, 19.99]},
+  {update: false, add: true}
+]
+```
+
+Only update existing records (no adds):
+```typescript
+['BulkAddOrUpdateRecord', 'Inventory',
+  {sku: ['SKU001', 'SKU002']},
+  {quantity: [100, 200]},
+  {update: true, add: false}
+]
+```
+
+Update all matching records:
+```typescript
+['BulkAddOrUpdateRecord', 'Tasks',
+  {status: ['pending']},  // All pending tasks
+  {status: ['in_progress']},  // Set to in_progress
+  {on_many: 'all', allow_empty_require: false}
+]
+```
+
+**Common Errors**:
+- ❌ Empty require without flag: `require: {}, options: {}` → Set `allow_empty_require: true`
+- ❌ Mismatched array lengths between require and colValues
+- ❌ Non-unique values in require: Each combination must be unique
+
+### AddOrUpdateRecord
+
+Single-record version of BulkAddOrUpdateRecord.
+
+**Signature**: `['AddOrUpdateRecord', tableId, require, colValues, options]`
+
+**Parameters**:
+- `tableId` (string): Target table
+- `require` (object): Key-value pairs to match existing record
+- `colValues` (object): Key-value pairs to set
+- `options` (object): Same as BulkAddOrUpdateRecord
+
+**Example**:
+
+Upsert a single user:
+```typescript
+['AddOrUpdateRecord', 'Users',
+  {email: 'alice@example.com'},      // Match on this
+  {name: 'Alice Smith', age: 30},    // Update/add these
+  {on_many: 'first'}
+]
 ```
 
 ---
@@ -592,6 +734,75 @@ Adds a column but keeps it hidden from default views.
 }]
 ```
 
+### CopyFromColumn
+
+Copies column type, options, and data from one column to another (used in transformations).
+
+**Signature**: `['CopyFromColumn', tableId, srcColId, dstColId, widgetOptions]`
+
+**Parameters**:
+- `tableId` (string): Target table
+- `srcColId` (string): Source column to copy from
+- `dstColId` (string): Destination column to copy to
+- `widgetOptions` (string|null): JSON string of widget options, or null to use source's options
+
+**Behavior**:
+- Updates destination column's type to match source
+- Copies widgetOptions (or uses provided ones)
+- Copies visibleCol, displayCol, and rules settings
+- Copies all data values from source to destination
+- Only updates rows where values differ (optimized)
+
+**Examples**:
+
+Copy column data and settings:
+```typescript
+['CopyFromColumn', 'People', 'age_temp', 'age', null]
+```
+
+Copy with custom widget options:
+```typescript
+['CopyFromColumn', 'Products', 'price_new', 'price',
+  JSON.stringify({decimals: 2, currency: 'EUR'})]
+```
+
+**Use Case**: Typically used during column transformations where you:
+1. Create a transform column (e.g., `grist_Transform`)
+2. Populate it with transformed data
+3. Use CopyFromColumn to move the data to the original column
+4. Delete the transform column
+
+### ConvertFromColumn
+
+Converts column data from one type to another with external conversion logic.
+
+**Signature**: `['ConvertFromColumn', tableId, srcColId, dstColId, type, widgetOptions, visibleColRef]`
+
+**Parameters**:
+- `tableId` (string): Target table
+- `srcColId` (string): Source column
+- `dstColId` (string): Destination column
+- `type` (string): New column type
+- `widgetOptions` (string): JSON widget options for new type
+- `visibleColRef` (number): Column ref for Ref/RefList display
+
+**Behavior**:
+- Calls external converter to transform values
+- Takes into account display values for smart conversion
+- Updates destination column type
+- Bulk updates all converted values
+
+**Example**:
+
+Convert text to reference:
+```typescript
+// Convert text city names to Ref:Cities
+['ConvertFromColumn', 'Locations', 'cityName', 'cityRef',
+  'Ref:Cities', '{}', 25]  // 25 = Cities.name column ref
+```
+
+**Note**: This is primarily used internally by Grist's UI during type conversions. Most developers will use simpler actions like ModifyColumn.
+
 ---
 
 ## Import and Transform Actions
@@ -680,8 +891,21 @@ Common Python keywords to avoid:
 ✅ **CORRECT**: Object with arrays for each column
 
 ### 6. isFormula Default Value
-- **Default**: `true` if formula is non-empty, `false` otherwise
+- **Default in AddColumn/ModifyColumn**: `true` (creates formula column)
+- **Default in AddTable**: `bool(formula)` - true if formula is non-empty, false otherwise
+- **Type defaults**: Formula columns default to type `'Any'`, data columns default to type `'Text'`
 - **Best practice**: Always specify explicitly for clarity
+
+```typescript
+// ❌ Unclear - will create formula column with empty formula
+{id: 'name'}  // isFormula defaults to true
+
+// ✅ Clear - explicitly a data column
+{id: 'name', isFormula: false, type: 'Text'}
+
+// ✅ Clear - explicitly a formula column
+{id: 'total', isFormula: true, formula: '$quantity * $price'}
+```
 
 ### 7. Empty vs Null Arrays
 For `rowIds` in BulkAddRecord:
@@ -800,8 +1024,12 @@ Most `_grist_*` system tables should be modified through UserActions, not direct
 - `RemoveColumn(tableId, colId)`
 - `RenameColumn(tableId, oldColId, newColId)`
 - `ModifyColumn(tableId, colId, colInfo)`
+- `CopyFromColumn(tableId, srcColId, dstColId, widgetOptions)`
+- `ConvertFromColumn(tableId, srcColId, dstColId, type, widgetOptions, visibleColRef)`
 - `SetDisplayFormula(tableId, rowId, colRef, formula)`
 - `AddReverseColumn(sourceTableId, sourceColId, reverseColId)`
+- `RenameChoices(tableId, colId, renames)`
+- `MaybeCopyDisplayFormula(srcColRef, dstColRef)`
 
 **View Actions**:
 - `AddView(viewName)`
