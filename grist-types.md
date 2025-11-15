@@ -6,24 +6,41 @@ A complete reference for Grist's type system - column types, CellValue encoding,
 
 ## Quick Reference: Column Types
 
-| Type | Storage Format | Input Example | Output Example | Null Value | Notes |
-|------|----------------|---------------|----------------|------------|-------|
-| **Text** | `string` | `"hello"` | `"hello"` | `null` | Plain text |
-| **Numeric** | `number` | `123.45` | `123.45` | `null` | Double precision float |
-| **Int** | `number` | `42` | `42` | `null` | 32-bit integer |
-| **Bool** | `boolean` | `true` | `true` | `null` | Boolean value |
-| **Date** | `number` (seconds) | `1704844800` | `['d', 1704844800]` | `null` | Days since epoch (as seconds) |
-| **DateTime** | `['D', secs, tz]` | `['D', 1704945919, 'UTC']` | `['D', 1704945919, 'UTC']` | `null` | Seconds since epoch + timezone |
-| **Choice** | `string` | `"option1"` | `"option1"` | `''` | Single selection |
-| **ChoiceList** | `['L', ...]` | `['L', 'a', 'b']` | `['L', 'a', 'b']` | `null` | Multiple selections |
-| **Ref** | `number` (row ID) | `17` | `17` | `0` | Reference to row ⚠️ |
-| **RefList** | `['L', ...]` | `['L', 1, 2, 3]` | `['L', 1, 2, 3]` | `null` | Multiple row references |
-| **Attachments** | `['L', ...]` | `['L', 123, 456]` | `['L', 123, 456]` | `null` | Special RefList to `_grist_Attachments` |
-| **Any** | Various | Any type | Any type | `null` | For formula columns |
+| Type | Storage Format | Input Example | Output Example | Default Value | Null/Empty | Notes |
+|------|----------------|---------------|----------------|---------------|------------|-------|
+| **Text** | `string` | `"hello"` | `"hello"` | `''` | `''` or `null` | Plain text |
+| **Numeric** | `number` | `123.45` | `123.45` | `0` | `null` | Double precision float |
+| **Int** | `number` | `42` | `42` | `0` | `null` | 32-bit integer |
+| **Bool** | `boolean` | `true` | `true` | `false` | `null` | Stored as 0/1 in SQLite |
+| **Date** | `number` (seconds) | `1704844800` | `['d', 1704844800]` | `null` | `null` | Days since epoch (as seconds) |
+| **DateTime** | `['D', secs, tz]` | `['D', 1704945919, 'UTC']` | `['D', 1704945919, 'UTC']` | `null` | `null` | Seconds since epoch + timezone |
+| **Choice** | `string` | `"option1"` | `"option1"` | `''` | `''` | Single selection |
+| **ChoiceList** | `['L', ...]` | `['L', 'a', 'b']` | `['L', 'a', 'b']` | `null` | `null` | Multiple selections |
+| **Ref** | `number` (row ID) | `17` | `17` | `0` | `0` | Reference to row ⚠️ |
+| **RefList** | `['L', ...]` | `['L', 1, 2, 3]` | `['L', 1, 2, 3]` | `null` | `null` | Multiple row references |
+| **Attachments** | `['L', ...]` | `['L', 123, 456]` | `['L', 123, 456]` | `null` | `null` | Special RefList to `_grist_Attachments` |
+| **Blob** | Binary data | (binary) | (binary) | `null` | `null` | Rarely used, for binary data |
+| **Any** | Various | Any type | Any type | `null` | `null` | For formula columns |
+| **Id** | `number` | `1` | `1` | `0` | `0` | Row ID (auto-generated, read-only) |
+| **PositionNumber** | `number` | `1.5` | `1.5` | `Infinity` | `Infinity` | Internal sorting position |
+| **ManualSortPos** | `number` | `1.5` | `1.5` | `Infinity` | `Infinity` | Manual sort position |
+
+### Default vs Null Values
+
+**Important distinction:**
+- **Default Value**: What gets inserted for new records (from `gristTypes.ts:22-42`)
+- **Null/Empty**: What represents "no value" or empty cell
+
+**Key differences:**
+- `Text`, `Choice`: Default is `''` (empty string), which is also the empty representation
+- `Numeric`, `Int`: Default is `0`, but `null` represents empty/no value
+- `Bool`: Default is `false`, but `null` represents empty/no value
+- `Ref`: Both default AND empty are `0` (zero means "no reference")
+- Most others: Both default and empty are `null`
 
 **Key Source Files:**
 - `app/plugin/GristData.ts:67-69` - GristType definition
-- `app/common/gristTypes.ts:22-42` - Default values per type
+- `app/common/gristTypes.ts:22-42` - Default values per type (see `_defaultValues` map)
 - `app/client/widgets/UserType.ts:38-308` - Widget mappings
 
 ---
@@ -46,11 +63,14 @@ CellValues use either **primitives** (`string`, `number`, `boolean`, `null`) or 
 | **`O`** | **Dict** | `['O', {key: value}]` | `['O', {name: 'John'}]` | Structured data |
 | **`E`** | **Exception** | `['E', name, msg, details]` | `['E', 'ValueError', 'Invalid']` | Formula errors |
 | **`P`** | **Pending** | `['P']` | `['P']` | Formula calculating |
+| **`S`** | **Skip** | `['S']` | `['S']` | Skipped value (displays as `'...'`) |
 | **`C`** | **Censored** | `['C']` | `['C']` | Access control hidden |
 | **`U`** | **Unmarshallable** | `['U', repr]` | `['U', '<object>']` | Cannot serialize |
+| **`V`** | **Versions** | `['V', version_obj]` | `['V', {...}]` | Multi-version comparison |
 
 **Key Source Files:**
-- `app/plugin/GristData.ts:1-69` - GristObjCode enum
+- `app/plugin/GristData.ts:1-18` - GristObjCode enum (including Skip at line 10)
+- `app/plugin/objtypes.ts:132-136` - SkipValue class (displays as `'...'`)
 - `app/plugin/objtypes.ts:157-244` - encode/decode functions
 
 ### Encoding Details by Type
@@ -168,12 +188,14 @@ Widget options control display formatting and behavior. They are **stored as JSO
 
 ```typescript
 {
-  alignment: 'left' | 'center' | 'right',  // Cell text alignment
-  textColor: string,                        // CSS color (e.g., '#FF0000')
-  fillColor: string,                        // Background CSS color
-  wrap: true | false | undefined            // Text wrapping
+  alignment?: 'left' | 'center' | 'right',  // Cell text alignment
+  textColor?: string,                        // CSS color (e.g., '#FF0000')
+  fillColor?: string,                        // Background CSS color
+  wrap?: true | false | undefined            // Text wrapping
 }
 ```
+
+**Note:** The `WidgetOptions` interface in `app/common/WidgetOptions.ts:4-5` has a TypeScript bug where `textColor` and `fillColor` are typed as the literal `'string'` instead of the type `string`. This documentation shows the correct semantic types. The runtime behavior treats these as `string` values (CSS colors).
 
 ### Numeric Options (Numeric, Int)
 
@@ -426,6 +448,8 @@ is, lambda, nonlocal, not, or, pass, raise, return, try, while, with, yield
 ---
 
 ## Null Handling by Type
+
+**Note:** This section describes null/empty value handling. For default values inserted into new records, see the "Default vs Null Values" section in Quick Reference above.
 
 | Type | Null Input | Stored As | Output | Display | Notes |
 |------|-----------|-----------|--------|---------|-------|
