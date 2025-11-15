@@ -110,11 +110,14 @@ enum GristObjCode {
 // Exception: Division by zero
 ["E", "ZeroDivisionError", "division by zero", null]
 
-// Empty List
+// Empty ChoiceList
 ["L"]
 
-// Empty ReferenceList
-["L"]  // Note: Same as empty List when in RefList column
+// Empty RefList (stored as null, formulas see empty RecordSet [])
+null
+
+// Empty ReferenceList (in Any column only)
+["r", "TableName", []]
 ```
 
 ### Critical Gotchas
@@ -140,15 +143,18 @@ enum GristObjCode {
    - JavaScript Date uses milliseconds, so multiply/divide by 1000
 
 4. **Empty List vs Null**
-   - Empty list: `["L"]` (one element: the code)
-   - Null: `null` (both are valid for list types)
+   - Empty ChoiceList: `["L"]` (one element: the code) OR `null`
+   - **Empty RefList: ALWAYS `null`** (never `["L"]`)
    - Empty string: `""` (different from null for Text)
    - `isBlankValue()` treats all as blank: `null`, `""`, `["L"]`
+   - **CRITICAL:** RefList columns store empty as `null`, but formulas see `[]` (empty RecordSet)
 
 5. **ChoiceList Encoding**
    - ChoiceList stores string values: `["L", "Choice1", "Choice2"]`
-   - RefList stores integers: `["L", 1, 5, 10]`
+   - RefList stores integers: `["L", 1, 5, 10]` (when non-empty)
    - Both use `"L"` code but different value types
+   - **Empty ChoiceList:** `["L"]` or `null`
+   - **Empty RefList:** `null` only (never `["L"]`)
 
 ### Encoding/Decoding Functions
 
@@ -642,13 +648,17 @@ isBooleanOrNull(v) // boolean, 1, 0, or null
 // List types
 isList(v)          // ["L", ...]
 isListOrNull(v)    // ["L", ...] or null
+isEmptyList(v)     // ["L"] (empty list with just the code)
 
 // Reference types
-isReference(v)     // ["R", tableId, rowId]
-isReferenceList(v) // ["L", id1, id2, ...]  (in RefList column)
+isReference(v)           // ["R", tableId, rowId]
+isReferenceList(v)       // ["r", tableId, [ids]] (in Any column)
+isEmptyReferenceList(v)  // ["r", tableId, []] (in Any column, NOT for RefList columns!)
 ```
 
-**Source:** `app/common/gristTypes.ts:179-177`
+**Important:** `isEmptyReferenceList()` checks for `["r"]` encoding used in **Any columns only**, NOT for RefList column values (which use `null` when empty).
+
+**Source:** `app/common/gristTypes.ts:168-177`
 
 ### Critical Null Gotchas
 
@@ -698,18 +708,31 @@ record.manualSort  # → Infinity (or specific position)
 ```python
 # Using 'r' code in RefList column
 ref_list_value = ['r', 'People', [1, 2, 3]]
+
+# Using ["L"] for empty RefList
+empty_ref_list = ['L']  # WRONG: RefList empty is null
 ```
 
 ✅ **CORRECT:**
 ```python
-# RefList columns use 'L' code with just the IDs
+# RefList columns use 'L' code with just the IDs (when non-empty)
 ref_list_value = ['L', 1, 2, 3]
+
+# Empty RefList is null (NOT ["L"])
+empty_ref_list = None  # Python
+empty_ref_list = null  # JavaScript/TypeScript
 
 # The 'r' code is ONLY for ReferenceList in Any columns
 any_column_value = ['r', 'People', [1, 2, 3]]
 ```
 
-**Source:** `app/plugin/GristData.ts:40-41`
+**CRITICAL DISTINCTION:**
+- **RefList column with values:** `["L", 1, 2, 3]`
+- **RefList column empty:** `null` (formulas see `[]` empty RecordSet)
+- **ChoiceList empty:** `["L"]` OR `null` (both valid)
+- **ReferenceList in Any column:** `["r", "Table", [ids]]`
+
+**Source:** `app/plugin/GristData.ts:40-41`, `sandbox/grist/usertypes.py:503-505`
 
 ---
 
@@ -833,26 +856,35 @@ if len(value) == 0:  # WRONG for encoded lists
 # Treating empty list as falsy
 if not value:  # WRONG: ["L"] is truthy
     print("Empty")
+
+# Confusing RefList with ChoiceList
+ref_list_value = ["L"]  # WRONG: RefList empty is null, not ["L"]
 ```
 
 ✅ **CORRECT:**
 ```python
 from app.common.gristTypes import isEmptyList, isBlankValue
 
-# Proper empty list check
+# For ChoiceList: check for empty ["L"]
 if isEmptyList(value):  # ["L"] → true
-    print("Empty list")
+    print("Empty ChoiceList")
 
-# Or check for any blank value
+# For RefList: check for null (not ["L"])
+if value is None:  # RefList empty is null
+    print("Empty RefList")
+
+# Or check for any blank value (works for both)
 if isBlankValue(value):  # null, "", ["L"] → true
     print("Blank")
 
-# Manual check
+# Manual check for ChoiceList
 if value == ["L"]:
-    print("Empty list")
+    print("Empty ChoiceList")
 ```
 
-**Source:** `app/common/gristTypes.ts:168-169, 360-367`
+**CRITICAL:** RefList columns store empty values as `null`, NOT `["L"]`. Only ChoiceList uses `["L"]` for empty.
+
+**Source:** `app/common/gristTypes.ts:168-169, 360-367`, `sandbox/grist/usertypes.py:503-505`
 
 ---
 
