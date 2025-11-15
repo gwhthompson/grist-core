@@ -98,38 +98,112 @@ export interface ChoiceOptions {
   [choice: string]: ChoiceOption;
 }
 
-/** Generic widget options covering all column types */
-export interface WidgetOptions extends FormatOptions {
-  // Common (Text, Any, Ref, RefList, Choice, ChoiceList)
+// ============================================================================
+// Column-Type-Specific Widget Options (Type-Safe)
+// ============================================================================
+
+/** Base options for text-based columns */
+interface BaseTextOptions extends FormatOptions {
   alignment?: 'left' | 'center' | 'right';
   wrap?: boolean;
-  
+}
+
+/** Options for Any column type */
+export interface AnyWidgetOptions extends BaseTextOptions {}
+
+/** Options for Text column type (TextBox, Markdown, HyperLink widgets) */
+export interface TextWidgetOptions extends BaseTextOptions {
+  /** Set to 'Markdown' or 'HyperLink' to use those widgets */
+  widget?: 'Markdown' | 'HyperLink';
+}
+
+/** Options for Numeric column type (TextBox, Spinner widgets) */
+export interface NumericWidgetOptions extends BaseTextOptions, NumberFormatOptions {}
+
+/** Options for Int column type (TextBox, Spinner widgets) */
+export interface IntWidgetOptions extends BaseTextOptions, NumberFormatOptions {
+  /** Defaults to 0 for integers */
+  decimals?: number | null;
+}
+
+/** Options for Bool column type (TextBox, CheckBox, Switch widgets) */
+export interface BoolWidgetOptions extends FormatOptions {
+  /** Only for TextBox widget */
+  alignment?: 'left' | 'center' | 'right';
+  /** Only for TextBox widget */
+  wrap?: boolean;
+}
+
+/** Options for Date column type (TextBox widget only) */
+export interface DateWidgetOptions extends FormatOptions {
+  dateFormat?: string;
+  isCustomDateFormat?: boolean;
+  alignment?: 'left' | 'center' | 'right';
+}
+
+/** Options for DateTime column type (TextBox widget only) */
+export interface DateTimeWidgetOptions extends FormatOptions {
+  dateFormat?: string;
+  timeFormat?: string;
+  isCustomDateFormat?: boolean;
+  isCustomTimeFormat?: boolean;
+  alignment?: 'left' | 'center' | 'right';
+}
+
+/** Options for Choice column type (TextBox widget only) */
+export interface ChoiceWidgetOptions extends BaseTextOptions {
+  choices?: string[];
+  choiceOptions?: ChoiceOptions;
+}
+
+/** Options for ChoiceList column type (TextBox widget only) */
+export interface ChoiceListWidgetOptions extends BaseTextOptions {
+  choices?: string[];
+  choiceOptions?: ChoiceOptions;
+}
+
+/** Options for Ref column type (Reference widget only) */
+export interface RefWidgetOptions extends BaseTextOptions {}
+
+/** Options for RefList column type (Reference widget only) */
+export interface RefListWidgetOptions extends BaseTextOptions {}
+
+/** Options for Attachments column type (Attachments widget only) */
+export interface AttachmentsWidgetOptions extends FormatOptions {
+  height?: string;
+}
+
+/**
+ * Generic widget options covering all column types.
+ * For type-safe options, use column-specific interfaces above.
+ */
+export interface WidgetOptions extends FormatOptions {
+  // Common
+  alignment?: 'left' | 'center' | 'right';
+  wrap?: boolean;
+  widget?: string;
+
   // Numeric, Int
   numMode?: NumMode | null;
   numSign?: NumSign | null;
   decimals?: number | null;
   maxDecimals?: number | null;
   currency?: string | null;
-  
-  // Date
+
+  // Date, DateTime
   dateFormat?: string;
-  isCustomDateFormat?: boolean;
-  
-  // DateTime
   timeFormat?: string;
+  isCustomDateFormat?: boolean;
   isCustomTimeFormat?: boolean;
-  
+
   // Choice, ChoiceList
   choices?: string[];
   choiceOptions?: ChoiceOptions;
-  
+
   // Attachments
   height?: string;
-  
-  // HyperLink widget
-  widget?: string;
-  
-  // Conditional styling
+
+  // Conditional styling (applies to all types)
   textColor?: string;
   fillColor?: string;
   fontBold?: boolean;
@@ -137,6 +211,93 @@ export interface WidgetOptions extends FormatOptions {
   fontUnderline?: boolean;
   fontStrikethrough?: boolean;
 }
+
+/**
+ * Map of Grist column types to their valid widget options.
+ * Use this for type-safe widget option handling.
+ *
+ * @example
+ * ```typescript
+ * // Type-safe usage
+ * const numericOptions: NumericWidgetOptions = {
+ *   alignment: 'right',
+ *   numMode: 'currency',
+ *   currency: 'USD',
+ *   decimals: 2
+ * };
+ *
+ * // Or get options by column type
+ * function getOptionsForType<T extends GristType>(
+ *   type: T
+ * ): WidgetOptionsByType[T] {
+ *   // Returns type-safe options for the column type
+ * }
+ * ```
+ */
+export interface WidgetOptionsByType {
+  Any: AnyWidgetOptions;
+  Text: TextWidgetOptions;
+  Numeric: NumericWidgetOptions;
+  Int: IntWidgetOptions;
+  Bool: BoolWidgetOptions;
+  Date: DateWidgetOptions;
+  DateTime: DateTimeWidgetOptions;
+  Choice: ChoiceWidgetOptions;
+  ChoiceList: ChoiceListWidgetOptions;
+  Ref: RefWidgetOptions;
+  RefList: RefListWidgetOptions;
+  Attachments: AttachmentsWidgetOptions;
+  // These types typically don't have custom widget options
+  Blob: FormatOptions;
+  Id: FormatOptions;
+  ManualSortPos: FormatOptions;
+  PositionNumber: FormatOptions;
+}
+
+/**
+ * WIDGET OPTIONS REFERENCE TABLE
+ * ===============================
+ *
+ * Shows which widget options are valid for each column type.
+ * ✓ = Valid option for this type
+ *
+ * | Option              | Any | Text | Numeric | Int | Bool | Date | DateTime | Choice | ChoiceList | Ref | RefList | Attachments |
+ * |---------------------|-----|------|---------|-----|------|------|----------|--------|------------|-----|---------|-------------|
+ * | alignment           |  ✓  |  ✓   |    ✓    |  ✓  |  ✓*  |  ✓   |    ✓     |   ✓    |     ✓      |  ✓  |    ✓    |             |
+ * | wrap                |  ✓  |  ✓   |    ✓    |  ✓  |  ✓*  |      |          |   ✓    |     ✓      |  ✓  |    ✓    |             |
+ * | numMode             |     |      |    ✓    |  ✓  |      |      |          |        |            |     |         |             |
+ * | numSign             |     |      |    ✓    |  ✓  |      |      |          |        |            |     |         |             |
+ * | decimals            |     |      |    ✓    |  ✓  |      |      |          |        |            |     |         |             |
+ * | maxDecimals         |     |      |    ✓    |  ✓  |      |      |          |        |            |     |         |             |
+ * | currency            |     |      |    ✓    |  ✓  |      |      |          |        |            |     |         |             |
+ * | dateFormat          |     |      |         |     |      |  ✓   |    ✓     |        |            |     |         |             |
+ * | timeFormat          |     |      |         |     |      |      |    ✓     |        |            |     |         |             |
+ * | isCustomDateFormat  |     |      |         |     |      |  ✓   |    ✓     |        |            |     |         |             |
+ * | isCustomTimeFormat  |     |      |         |     |      |      |    ✓     |        |            |     |         |             |
+ * | choices             |     |      |         |     |      |      |          |   ✓    |     ✓      |     |         |             |
+ * | choiceOptions       |     |      |         |     |      |      |          |   ✓    |     ✓      |     |         |             |
+ * | height              |     |      |         |     |      |      |          |        |            |     |         |      ✓      |
+ * | widget              |     |  ✓** |         |     |      |      |          |        |            |     |         |             |
+ *
+ * Notes:
+ * - ✓* = Only valid for TextBox widget (not CheckBox/Switch)
+ * - ✓** = Set to 'Markdown' or 'HyperLink' to use those widgets
+ * - Conditional styling (textColor, fillColor, font*) can be applied to all types via conditional rules
+ *
+ * AVAILABLE WIDGETS PER COLUMN TYPE:
+ * - Any: TextBox
+ * - Text: TextBox, Markdown, HyperLink
+ * - Numeric: TextBox, Spinner
+ * - Int: TextBox, Spinner
+ * - Bool: TextBox, CheckBox, Switch
+ * - Date: TextBox
+ * - DateTime: TextBox
+ * - Choice: TextBox
+ * - ChoiceList: TextBox
+ * - Ref: Reference
+ * - RefList: Reference
+ * - Attachments: Attachments
+ */
 
 /** Available widget types per column type (from UserType.ts) */
 export type CellWidgetType =
