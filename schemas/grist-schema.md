@@ -564,8 +564,8 @@ Complex types use encoding for transmission:
 | Reference | `['R', table, id]` | `['R', 'People', 17]` |
 | Exception | `['E', name, msg]` | `['E', 'ValueError', 'Invalid']` |
 
-**CRITICAL**: 
-- **RefList empty**: `null` (NOT `['L']`)
+**CRITICAL**:
+- **RefList empty**: `null` OR `['L']` (both valid)
 - **Ref null**: `0` (NOT `null`)
 
 ---
