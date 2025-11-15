@@ -1,0 +1,3871 @@
+openapi: 3.0.3
+info:
+  title: Grist REST API
+  version: 1.0.0
+  description: |
+    Comprehensive REST API for Grist - a relational spreadsheet with Python formulas.
+
+    This API provides complete access to:
+    - Organizations, workspaces, and documents
+    - User and access management
+    - Document data (tables, records, columns)
+    - SQL queries and formulas
+    - Webhooks and automation
+    - Attachments and exports
+    - Administrative functions
+
+    ## Authentication
+
+    The API supports multiple authentication methods:
+    - **API Keys**: User or Service Account API keys via `Authorization: Bearer <key>` header
+    - **Session Cookies**: Browser-based authentication via session cookies
+    - **Access Tokens**: Short-lived JWT tokens for document-level access
+
+    ## Base URLs
+
+    - Home API: `/api/` - Organization and document management
+    - Doc API: `/api/docs/:docId/` - Document-level operations
+    - Admin API: `/api/admin/`, `/api/install/` - Installation administration
+
+    ## Rate Limiting
+
+    API requests are subject to rate limiting based on your product plan:
+    - Maximum parallel requests per document
+    - Daily API usage limits per document
+    - Specific limits for AI assistant features
+
+  contact:
+    name: Grist Labs
+    url: https://github.com/gristlabs/grist-core
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: /
+    description: Relative to current domain
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+  - CookieAuth: []
+
+tags:
+  - name: Organizations
+    description: Organization management and access
+  - name: Workspaces
+    description: Workspace management within organizations
+  - name: Documents
+    description: Document (spreadsheet) management
+  - name: Tables
+    description: Table operations within documents
+  - name: Records
+    description: Record (row) operations
+  - name: Columns
+    description: Column operations
+  - name: SQL
+    description: SQL query interface
+  - name: Attachments
+    description: File attachment management
+  - name: Webhooks
+    description: Webhook configuration and management
+  - name: Access Control
+    description: Permissions and access management
+  - name: Users
+    description: User profile and settings
+  - name: Sessions
+    description: Session and authentication management
+  - name: Service Accounts
+    description: Service account management for API access
+  - name: Export
+    description: Document and data export
+  - name: Snapshots
+    description: Document version snapshots
+  - name: Admin
+    description: Installation administration
+  - name: Templates
+    description: Template documents
+
+paths:
+  # ==================== ORGANIZATIONS ====================
+  /api/orgs:
+    get:
+      tags: [Organizations]
+      summary: List organizations
+      description: Get all organizations the user has access to
+      operationId: listOrgs
+      parameters:
+        - name: merged
+          in: query
+          schema:
+            type: boolean
+          description: Merge personal organizations
+      responses:
+        '200':
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organization'
+    post:
+      tags: [Organizations]
+      summary: Create organization
+      description: Create a new organization
+      operationId: createOrg
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationProperties'
+      responses:
+        '200':
+          description: Created organization ID
+          content:
+            application/json:
+              schema:
+                type: integer
+
+  /api/orgs/{oid}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Organizations]
+      summary: Get organization
+      description: Get organization details by ID or domain
+      operationId: getOrg
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+    patch:
+      tags: [Organizations]
+      summary: Update organization
+      description: Update organization properties (name, domain, etc.)
+      operationId: updateOrg
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationProperties'
+      responses:
+        '200':
+          description: Organization updated successfully
+    delete:
+      tags: [Organizations]
+      summary: Delete organization
+      description: Permanently delete organization and all content
+      operationId: deleteOrg
+      responses:
+        '200':
+          description: Organization deleted
+          content:
+            application/json:
+              schema:
+                type: integer
+                description: Deleted organization ID
+
+  /api/orgs/{oid}/{name}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Organization name/domain or 'force-delete' to confirm deletion
+    delete:
+      tags: [Organizations]
+      summary: Delete organization (with confirmation)
+      description: Delete organization - name must match org name, domain, or be 'force-delete'
+      operationId: deleteOrgConfirmed
+      responses:
+        '200':
+          description: Organization deleted
+
+  /api/orgs/{oid}/workspaces:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Workspaces]
+      summary: List organization workspaces
+      description: Get all workspaces in an organization
+      operationId: listOrgWorkspaces
+      responses:
+        '200':
+          description: List of workspaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workspace'
+    post:
+      tags: [Workspaces]
+      summary: Create workspace
+      description: Create a new workspace in the organization
+      operationId: createWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: Workspace name
+      responses:
+        '200':
+          description: Created workspace ID
+          content:
+            application/json:
+              schema:
+                type: integer
+
+  /api/orgs/{oid}/usage:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Organizations]
+      summary: Get organization usage
+      description: Get usage summary for all documents in the organization (owners only)
+      operationId: getOrgUsage
+      responses:
+        '200':
+          description: Usage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgUsageSummary'
+
+  /api/orgs/{oid}/access:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+    get:
+      tags: [Access Control]
+      summary: Get organization access
+      description: Get user access information for an organization
+      operationId: getOrgAccess
+      responses:
+        '200':
+          description: Access information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionData'
+    patch:
+      tags: [Access Control]
+      summary: Update organization permissions
+      description: Update organization ACL rules
+      operationId: updateOrgPermissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delta]
+              properties:
+                delta:
+                  $ref: '#/components/schemas/PermissionDelta'
+      responses:
+        '200':
+          description: Permissions updated
+
+  # ==================== WORKSPACES ====================
+  /api/workspaces/{wid}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Workspaces]
+      summary: Get workspace
+      description: Get workspace details including nested documents
+      operationId: getWorkspace
+      responses:
+        '200':
+          description: Workspace details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+    patch:
+      tags: [Workspaces]
+      summary: Update workspace
+      description: Update workspace properties
+      operationId: updateWorkspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Workspace updated
+    delete:
+      tags: [Workspaces]
+      summary: Delete workspace
+      description: Permanently delete workspace and all documents
+      operationId: deleteWorkspace
+      responses:
+        '200':
+          description: Workspace deleted
+
+  /api/workspaces/{wid}/remove:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Remove workspace
+      description: Soft-delete workspace (can be restored) or permanently delete if permanent=1
+      operationId: removeWorkspace
+      parameters:
+        - name: permanent
+          in: query
+          schema:
+            type: string
+            enum: ['1', 'true']
+      responses:
+        '200':
+          description: Workspace removed
+
+  /api/workspaces/{wid}/unremove:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Workspaces]
+      summary: Restore workspace
+      description: Recover a soft-deleted workspace
+      operationId: unremoveWorkspace
+      responses:
+        '200':
+          description: Workspace restored
+
+  /api/workspaces/{wid}/access:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      tags: [Access Control]
+      summary: Get workspace access
+      description: Get user access information for a workspace
+      operationId: getWorkspaceAccess
+      responses:
+        '200':
+          description: Access information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionData'
+    patch:
+      tags: [Access Control]
+      summary: Update workspace permissions
+      description: Update workspace ACL rules
+      operationId: updateWorkspacePermissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delta]
+              properties:
+                delta:
+                  $ref: '#/components/schemas/PermissionDelta'
+      responses:
+        '200':
+          description: Permissions updated
+
+  /api/workspaces/{wid}/docs:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Documents]
+      summary: Create document
+      description: Create a new document in the workspace
+      operationId: createDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentProperties'
+      responses:
+        '200':
+          description: Created document ID
+          content:
+            application/json:
+              schema:
+                type: string
+
+  /api/workspaces/{wid}/import:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    post:
+      tags: [Documents]
+      summary: Import document
+      description: Import a file to create a new document in the workspace
+      operationId: importDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  type: string
+                  format: binary
+                uploadId:
+                  type: integer
+                documentName:
+                  type: string
+                timezone:
+                  type: string
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocCreationInfo'
+
+  # ==================== DOCUMENTS ====================
+  /api/docs:
+    post:
+      tags: [Documents]
+      summary: Create or import document
+      description: |
+        Create a new document (saved or unsaved). Can:
+        - Upload a file to import
+        - Copy from an existing document (sourceDocumentId)
+        - Create an empty document
+      operationId: createDoc
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspaceId:
+                  type: integer
+                  description: If provided, document is saved to this workspace
+                documentName:
+                  type: string
+                sourceDocumentId:
+                  type: string
+                  description: Copy from this document
+                asTemplate:
+                  type: boolean
+                  description: Copy structure only, not data
+                timezone:
+                  type: string
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  type: string
+                  format: binary
+                workspaceId:
+                  type: integer
+                documentName:
+                  type: string
+      responses:
+        '200':
+          description: Created document ID
+          content:
+            application/json:
+              schema:
+                type: string
+
+  /api/docs/{docId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Documents]
+      summary: Get document
+      description: Get document metadata
+      operationId: getDocument
+      responses:
+        '200':
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+    patch:
+      tags: [Documents]
+      summary: Update document
+      description: Update document properties (name, type, options, etc.)
+      operationId: updateDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentProperties'
+      responses:
+        '200':
+          description: Document updated
+    delete:
+      tags: [Documents]
+      summary: Delete document
+      description: Permanently delete document
+      operationId: deleteDocument
+      responses:
+        '200':
+          description: Document deleted
+
+  /api/docs/{docId}/remove:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Remove document
+      description: Soft-delete document or permanently delete if permanent=1
+      operationId: removeDocument
+      parameters:
+        - name: permanent
+          in: query
+          schema:
+            type: string
+            enum: ['1', 'true']
+      responses:
+        '200':
+          description: Document removed
+
+  /api/docs/{docId}/unremove:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Restore document
+      description: Recover a soft-deleted document
+      operationId: unremoveDocument
+      responses:
+        '200':
+          description: Document restored
+
+  /api/docs/{docId}/access:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Access Control]
+      summary: Get document access
+      description: Get user access information for a document
+      operationId: getDocumentAccess
+      responses:
+        '200':
+          description: Access information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PermissionData'
+    patch:
+      tags: [Access Control]
+      summary: Update document permissions
+      description: Update document ACL rules
+      operationId: updateDocumentPermissions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [delta]
+              properties:
+                delta:
+                  $ref: '#/components/schemas/PermissionDelta'
+      responses:
+        '200':
+          description: Permissions updated
+
+  /api/docs/{docId}/move:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    patch:
+      tags: [Documents]
+      summary: Move document
+      description: Move document to a different workspace
+      operationId: moveDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace]
+              properties:
+                workspace:
+                  type: integer
+                  description: Target workspace ID
+      responses:
+        '200':
+          description: Document moved
+
+  /api/docs/{docId}/pin:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    patch:
+      tags: [Documents]
+      summary: Pin document
+      description: Pin document to appear at top of lists
+      operationId: pinDocument
+      responses:
+        '200':
+          description: Document pinned
+
+  /api/docs/{docId}/unpin:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    patch:
+      tags: [Documents]
+      summary: Unpin document
+      description: Unpin document
+      operationId: unpinDocument
+      responses:
+        '200':
+          description: Document unpinned
+
+  /api/docs/{docId}/fork:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Fork document
+      description: Create a fork (editable copy) of the document
+      operationId: forkDocument
+      responses:
+        '200':
+          description: Fork result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForkResult'
+
+  /api/docs/{docId}/copy:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Copy document
+      description: Copy document to a workspace
+      operationId: copyDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspaceId, documentName]
+              properties:
+                workspaceId:
+                  type: integer
+                documentName:
+                  type: string
+                asTemplate:
+                  type: boolean
+                  description: Copy structure only, not data
+      responses:
+        '200':
+          description: Created document ID
+          content:
+            application/json:
+              schema:
+                type: string
+
+  /api/docs/{docId}/apply:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Apply user actions
+      description: Apply user actions to modify the document
+      operationId: applyUserActions
+      parameters:
+        - name: noparse
+          in: query
+          schema:
+            type: boolean
+          description: Don't parse string values
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserAction'
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyUAResult'
+
+  /api/docs/{docId}/replace:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Replace document
+      description: Replace document content from another document or snapshot
+      operationId: replaceDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocReplacementOptions'
+      responses:
+        '200':
+          description: Document replaced
+
+  /api/docs/{docId}/force-reload:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Force reload document
+      description: Force reload/restart the document (closes and reopens it)
+      operationId: forceReloadDocument
+      responses:
+        '200':
+          description: Document reloaded
+
+  /api/docs/{docId}/recover:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Set recovery mode
+      description: Enable/disable recovery mode for the document (owners only)
+      operationId: recoverDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recoveryMode]
+              properties:
+                recoveryMode:
+                  type: boolean
+      responses:
+        '200':
+          description: Recovery mode status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recoveryMode:
+                    type: boolean
+
+  /api/docs/{docId}/flush:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Flush document
+      description: Force save all pending changes to storage
+      operationId: flushDocument
+      responses:
+        '200':
+          description: Flush result
+          content:
+            application/json:
+              schema:
+                type: boolean
+                description: True if document was flushed, false if not loaded
+
+  /api/docs/{docId}/assign:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Reassign document worker
+      description: Administrative endpoint to reassign document to different worker
+      operationId: assignDocument
+      parameters:
+        - name: group
+          in: query
+          schema:
+            type: string
+          description: Update document's worker group
+      responses:
+        '200':
+          description: Reassignment result
+          content:
+            application/json:
+              schema:
+                type: boolean
+                description: True if reassigned, false if already correct
+
+  # ==================== TABLES ====================
+  /api/docs/{docId}/tables:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Tables]
+      summary: List tables
+      description: Get list of all tables in the document
+      operationId: listTables
+      responses:
+        '200':
+          description: List of tables
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TableRecord'
+    post:
+      tags: [Tables]
+      summary: Create tables
+      description: Create one or more new tables
+      operationId: createTables
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TablesPost'
+      responses:
+        '200':
+          description: Created table IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+    patch:
+      tags: [Tables]
+      summary: Update tables
+      description: Update properties of one or more tables
+      operationId: updateTables
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TablesPatch'
+      responses:
+        '200':
+          description: Tables updated
+
+  /api/docs/{docId}/tables/{tableId}/columns:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    get:
+      tags: [Columns]
+      summary: List columns
+      description: Get list of all columns in the table
+      operationId: listColumns
+      parameters:
+        - name: hidden
+          in: query
+          schema:
+            type: boolean
+          description: Include hidden columns
+      responses:
+        '200':
+          description: List of columns
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ColumnRecord'
+    post:
+      tags: [Columns]
+      summary: Create columns
+      description: Create one or more new columns in the table
+      operationId: createColumns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnsPost'
+      responses:
+        '200':
+          description: Created column IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  columns:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+    patch:
+      tags: [Columns]
+      summary: Update columns
+      description: Update properties of one or more columns
+      operationId: updateColumns
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnsPatch'
+      responses:
+        '200':
+          description: Columns updated
+    put:
+      tags: [Columns]
+      summary: Add or update columns
+      description: Add new columns and/or update existing ones
+      operationId: upsertColumns
+      parameters:
+        - name: noadd
+          in: query
+          schema:
+            type: boolean
+          description: Skip adding new columns
+        - name: noupdate
+          in: query
+          schema:
+            type: boolean
+          description: Skip updating existing columns
+        - name: replaceall
+          in: query
+          schema:
+            type: boolean
+          description: Remove columns not in the request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnsPut'
+      responses:
+        '200':
+          description: Columns upserted
+
+  /api/docs/{docId}/tables/{tableId}/columns/{colId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+      - name: colId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Column ID
+    delete:
+      tags: [Columns]
+      summary: Delete column
+      description: Delete a column from the table
+      operationId: deleteColumn
+      responses:
+        '200':
+          description: Column deleted
+
+  /api/docs/{docId}/tables/{tableId}/data:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    get:
+      tags: [Records]
+      summary: Get table data
+      description: Get table data in column-oriented format
+      operationId: getTableData
+      parameters:
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: immediate
+          in: query
+          schema:
+            type: boolean
+          description: Skip waiting for document initialization
+      responses:
+        '200':
+          description: Table data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TableColValues'
+    post:
+      tags: [Records]
+      summary: Add records (column format)
+      description: Add records to the table in column-oriented format
+      operationId: addRecordsColumn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkColValues'
+      responses:
+        '200':
+          description: Created record IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+    patch:
+      tags: [Records]
+      summary: Update records (column format)
+      description: Update records in column-oriented format
+      operationId: updateRecordsColumn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableColValues'
+              description: Must include 'id' column with record IDs
+      responses:
+        '200':
+          description: Records updated
+
+  /api/docs/{docId}/tables/{tableId}/records:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    get:
+      tags: [Records]
+      summary: Get table records
+      description: Get table data in record-oriented format
+      operationId: getTableRecords
+      parameters:
+        - $ref: '#/components/parameters/FilterParam'
+        - $ref: '#/components/parameters/SortParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: hidden
+          in: query
+          schema:
+            type: boolean
+          description: Include hidden columns
+        - name: immediate
+          in: query
+          schema:
+            type: boolean
+          description: Skip waiting for document initialization
+      responses:
+        '200':
+          description: Table records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TableRecordValue'
+    post:
+      tags: [Records]
+      summary: Add records (record format)
+      description: Add records to the table in record-oriented format
+      operationId: addRecords
+      parameters:
+        - name: flat
+          in: query
+          schema:
+            type: boolean
+          description: Accept flat array of field objects
+        - name: noparse
+          in: query
+          schema:
+            type: boolean
+          description: Don't parse string values
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsPost'
+      responses:
+        '200':
+          description: Created records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TableRecordValue'
+    patch:
+      tags: [Records]
+      summary: Update records (record format)
+      description: Update records in record-oriented format
+      operationId: updateRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsPatch'
+      responses:
+        '200':
+          description: Records updated
+    put:
+      tags: [Records]
+      summary: Add or update records
+      description: Add new records and/or update existing ones (upsert)
+      operationId: upsertRecords
+      parameters:
+        - name: noadd
+          in: query
+          schema:
+            type: boolean
+          description: Skip adding new records
+        - name: noupdate
+          in: query
+          schema:
+            type: boolean
+          description: Skip updating existing records
+        - name: onmany
+          in: query
+          schema:
+            type: string
+            enum: [first, none, all]
+          description: How to handle multiple matches
+        - name: allow_empty_require
+          in: query
+          schema:
+            type: boolean
+          description: Allow empty require object
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsPut'
+      responses:
+        '200':
+          description: Records upserted
+
+  /api/docs/{docId}/tables/{tableId}/data/delete:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    post:
+      tags: [Records]
+      summary: Delete records (column format)
+      description: Delete records by ID
+      operationId: deleteRecordsColumn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              description: Array of record IDs to delete
+      responses:
+        '200':
+          description: Records deleted
+
+  /api/docs/{docId}/tables/{tableId}/records/delete:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    post:
+      tags: [Records]
+      summary: Delete records
+      description: Delete records by ID
+      operationId: deleteRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              description: Array of record IDs to delete
+      responses:
+        '200':
+          description: Records deleted
+
+  # ==================== SQL ====================
+  /api/docs/{docId}/sql:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [SQL]
+      summary: Execute SQL query (GET)
+      description: Execute a SQL query via query parameter (for testing)
+      operationId: executeSqlGet
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: SQL query
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlResult'
+        '400':
+          description: Query error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+    post:
+      tags: [SQL]
+      summary: Execute SQL query
+      description: Execute a SQL query (SELECT only)
+      operationId: executeSql
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SqlPost'
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlResult'
+        '400':
+          description: Query error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  # ==================== ATTACHMENTS ====================
+  /api/docs/{docId}/attachments:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Attachments]
+      summary: List attachments
+      description: Get list of all attachments in the document
+      operationId: listAttachments
+      responses:
+        '200':
+          description: List of attachments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AttachmentRecord'
+    post:
+      tags: [Attachments]
+      summary: Upload attachment
+      description: Upload one or more files as attachments
+      operationId: uploadAttachment
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: Created attachment row IDs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: integer
+
+  /api/docs/{docId}/attachments/{attId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: attId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Attachment row ID
+    get:
+      tags: [Attachments]
+      summary: Get attachment metadata
+      description: Get metadata for a specific attachment
+      operationId: getAttachment
+      responses:
+        '200':
+          description: Attachment metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentMetadata'
+
+  /api/docs/{docId}/attachments/{attId}/download:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: attId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Attachment row ID
+    get:
+      tags: [Attachments]
+      summary: Download attachment
+      description: Download attachment file content
+      operationId: downloadAttachment
+      parameters:
+        - name: tableId
+          in: query
+          schema:
+            type: string
+        - name: colId
+          in: query
+          schema:
+            type: string
+        - name: rowId
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Attachment file content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  /api/docs/{docId}/attachments/archive:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Attachments]
+      summary: Download attachments archive
+      description: Download all attachments as a zip or tar archive
+      operationId: downloadAttachmentsArchive
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [zip, tar]
+          description: Archive format
+      responses:
+        '200':
+          description: Archive file
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+            application/x-tar:
+              schema:
+                type: string
+                format: binary
+    post:
+      tags: [Attachments]
+      summary: Upload attachments archive
+      description: Upload a tar archive to add missing attachments (owners only)
+      operationId: uploadAttachmentsArchive
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Upload result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArchiveUploadResult'
+
+  /api/docs/{docId}/attachments/transferAll:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Attachments]
+      summary: Transfer all attachments
+      description: Start transferring all attachments to default store (owners only)
+      operationId: transferAllAttachments
+      responses:
+        '200':
+          description: Transfer status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentTransferStatus'
+
+  /api/docs/{docId}/attachments/transferStatus:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Attachments]
+      summary: Get transfer status
+      description: Get status of attachment transfer operations
+      operationId: getAttachmentTransferStatus
+      responses:
+        '200':
+          description: Transfer status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentTransferStatus'
+
+  /api/docs/{docId}/attachments/store:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Attachments]
+      summary: Get attachment store
+      description: Get the current attachment storage type
+      operationId: getAttachmentStore
+      responses:
+        '200':
+          description: Storage type
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    type: string
+                    enum: [internal, external]
+    post:
+      tags: [Attachments]
+      summary: Set attachment store
+      description: Set the attachment storage type (owners only)
+      operationId: setAttachmentStore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [internal, external]
+      responses:
+        '200':
+          description: Storage updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  store:
+                    type: string
+
+  /api/docs/{docId}/attachments/stores:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Attachments]
+      summary: List available stores
+      description: List available external attachment stores (owners only)
+      operationId: listAttachmentStores
+      responses:
+        '200':
+          description: Available stores
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stores:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        label:
+                          type: string
+
+  # ==================== WEBHOOKS ====================
+  /api/docs/{docId}/webhooks:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Webhooks]
+      summary: List webhooks
+      description: List all webhooks in the document with their status (owners only)
+      operationId: listWebhooks
+      responses:
+        '200':
+          description: Webhook list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSummaryCollection'
+    post:
+      tags: [Webhooks]
+      summary: Create webhooks
+      description: Create one or more webhooks (owners only)
+      operationId: createWebhooks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [webhooks]
+              properties:
+                webhooks:
+                  type: array
+                  items:
+                    type: object
+                    required: [fields]
+                    properties:
+                      fields:
+                        $ref: '#/components/schemas/WebhookFields'
+      responses:
+        '200':
+          description: Created webhook IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+
+  /api/docs/{docId}/webhooks/{webhookId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: webhookId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Webhook ID
+    patch:
+      tags: [Webhooks]
+      summary: Update webhook
+      description: Update webhook configuration (owners only)
+      operationId: updateWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookFields'
+      responses:
+        '200':
+          description: Webhook updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+    delete:
+      tags: [Webhooks]
+      summary: Delete webhook
+      description: Delete a webhook (owners only)
+      operationId: deleteWebhook
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/docs/{docId}/webhooks/queue:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    delete:
+      tags: [Webhooks]
+      summary: Clear all webhook queues
+      description: Clear all outgoing webhooks in queue for this document (owners only)
+      operationId: clearAllWebhookQueues
+      responses:
+        '200':
+          description: Queues cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/docs/{docId}/webhooks/queue/{webhookId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: webhookId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Webhook ID
+    delete:
+      tags: [Webhooks]
+      summary: Clear webhook queue
+      description: Clear outgoing webhooks in queue for a specific webhook (owners only)
+      operationId: clearWebhookQueue
+      responses:
+        '200':
+          description: Queue cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/docs/{docId}/tables/{tableId}/_subscribe:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    post:
+      deprecated: true
+      tags: [Webhooks]
+      summary: Subscribe webhook (deprecated)
+      description: Create a webhook subscription (deprecated - use POST /webhooks instead)
+      operationId: subscribeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookFields'
+      responses:
+        '200':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unsubscribeKey:
+                    type: string
+                  triggerId:
+                    type: integer
+                  webhookId:
+                    type: string
+
+  /api/docs/{docId}/tables/{tableId}/_unsubscribe:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - $ref: '#/components/parameters/TableId'
+    post:
+      deprecated: true
+      tags: [Webhooks]
+      summary: Unsubscribe webhook (deprecated)
+      description: Delete a webhook subscription (deprecated - use DELETE /webhooks/{id} instead)
+      operationId: unsubscribeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [webhookId]
+              properties:
+                webhookId:
+                  type: string
+                unsubscribeKey:
+                  type: string
+                  description: Required for non-owners
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  # ==================== EXPORT ====================
+  /api/docs/{docId}/download:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Download document
+      description: Download full document as .grist file
+      operationId: downloadDocument
+      parameters:
+        - name: template
+          in: query
+          schema:
+            type: boolean
+          description: Download as template (structure only, no data)
+        - name: nohistory
+          in: query
+          schema:
+            type: boolean
+          description: Remove action history
+        - name: dryrun
+          in: query
+          schema:
+            type: boolean
+          description: Check permissions without downloading
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Override filename
+      responses:
+        '200':
+          description: Document file
+          content:
+            application/x-grist:
+              schema:
+                type: string
+                format: binary
+
+  /api/docs/{docId}/download/xlsx:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Export to Excel
+      description: Export document or table to Excel (.xlsx) format
+      operationId: exportXlsx
+      parameters:
+        - $ref: '#/components/parameters/ExportTableId'
+        - $ref: '#/components/parameters/ExportViewSection'
+        - $ref: '#/components/parameters/ExportSortSpec'
+        - $ref: '#/components/parameters/ExportFilters'
+        - name: title
+          in: query
+          schema:
+            type: string
+          description: Override filename
+      responses:
+        '200':
+          description: Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/docs/{docId}/download/csv:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Export to CSV
+      description: Export table to CSV format
+      operationId: exportCsv
+      parameters:
+        - $ref: '#/components/parameters/ExportTableId'
+        - $ref: '#/components/parameters/ExportViewSection'
+        - $ref: '#/components/parameters/ExportSortSpec'
+        - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /api/docs/{docId}/download/tsv:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Export to TSV
+      description: Export table to TSV (tab-separated values) format
+      operationId: exportTsv
+      parameters:
+        - $ref: '#/components/parameters/ExportTableId'
+        - $ref: '#/components/parameters/ExportViewSection'
+        - $ref: '#/components/parameters/ExportSortSpec'
+        - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: TSV file
+          content:
+            text/tab-separated-values:
+              schema:
+                type: string
+
+  /api/docs/{docId}/download/dsv:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Export to DSV
+      description: Export table to DSV (delimiter-separated values) format with custom delimiter
+      operationId: exportDsv
+      parameters:
+        - $ref: '#/components/parameters/ExportTableId'
+        - $ref: '#/components/parameters/ExportViewSection'
+        - $ref: '#/components/parameters/ExportSortSpec'
+        - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: DSV file
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/docs/{docId}/download/table-schema:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Get table schema
+      description: Get table schema in Frictionless Data format
+      operationId: getTableSchema
+      parameters:
+        - $ref: '#/components/parameters/ExportTableId'
+        - $ref: '#/components/parameters/ExportViewSection'
+        - $ref: '#/components/parameters/ExportSortSpec'
+        - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: Table schema
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/docs/{docId}/send-to-drive:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Export]
+      summary: Export to Google Drive
+      description: Export document to Google Drive as a spreadsheet
+      operationId: exportToGoogleDrive
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Google OAuth authorization code
+        - name: title
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Spreadsheet title
+      responses:
+        '200':
+          description: Export result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    description: URL of created Google Sheet
+
+  # ==================== SNAPSHOTS ====================
+  /api/docs/{docId}/snapshots:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Snapshots]
+      summary: List snapshots
+      description: Get list of document version snapshots
+      operationId: listSnapshots
+      parameters:
+        - name: raw
+          in: query
+          schema:
+            type: boolean
+          description: Skip caching, get raw list
+      responses:
+        '200':
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocSnapshot'
+
+  /api/docs/{docId}/snapshots/remove:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Snapshots]
+      summary: Remove snapshots
+      description: Remove selected snapshots or all but current (owners only)
+      operationId: removeSnapshots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  required: [snapshotIds]
+                  properties:
+                    snapshotIds:
+                      type: array
+                      items:
+                        type: string
+                      description: Specific snapshot IDs to remove
+                - type: object
+                  required: [select]
+                  properties:
+                    select:
+                      type: string
+                      enum: [unlisted, past]
+                      description: Remove unlisted or past snapshots
+      responses:
+        '200':
+          description: Removed snapshot IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshotIds:
+                    type: array
+                    items:
+                      type: string
+
+  /api/docs/{docId}/states:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Snapshots]
+      summary: Get document states
+      description: Get list of recent document states/versions
+      operationId: getDocumentStates
+      responses:
+        '200':
+          description: Document states
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStates'
+
+  /api/docs/{docId}/states/remove:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Snapshots]
+      summary: Truncate history
+      description: Delete action history, keeping only N most recent actions (owners only)
+      operationId: truncateHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [keep]
+              properties:
+                keep:
+                  type: integer
+                  description: Number of recent actions to keep
+      responses:
+        '200':
+          description: History truncated
+
+  /api/docs/{docId}/compare:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Snapshots]
+      summary: Compare versions
+      description: Compare two versions of this document
+      operationId: compareVersions
+      parameters:
+        - name: left
+          in: query
+          schema:
+            type: string
+            default: HEAD
+          description: Left version hash
+        - name: right
+          in: query
+          schema:
+            type: string
+            default: HEAD
+          description: Right version hash
+        - name: maxRows
+          in: query
+          schema:
+            type: integer
+          description: Maximum rows to include in details
+      responses:
+        '200':
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+
+  /api/docs/{docId}/compare/{docId2}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: docId2
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Second document to compare
+    get:
+      tags: [Snapshots]
+      summary: Compare documents
+      description: Compare this document with another document
+      operationId: compareDocuments
+      parameters:
+        - name: detail
+          in: query
+          schema:
+            type: boolean
+          description: Include detailed changes
+        - name: maxRows
+          in: query
+          schema:
+            type: integer
+          description: Maximum rows to include in details
+      responses:
+        '200':
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+
+  # ==================== PROPOSALS ====================
+  /api/docs/{docId}/propose:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Create proposal
+      description: Make the fork's content a proposal to the trunk document
+      operationId: createProposal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retracted:
+                  type: boolean
+                  description: Mark proposal as retracted
+      responses:
+        '200':
+          description: Proposal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+
+  /api/docs/{docId}/proposals:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Documents]
+      summary: List proposals
+      description: List proposals for this document
+      operationId: listProposals
+      parameters:
+        - name: outgoing
+          in: query
+          schema:
+            type: boolean
+          description: List outgoing proposals (where this doc is source)
+      responses:
+        '200':
+          description: List of proposals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Proposal'
+
+  /api/docs/{docId}/proposals/{proposalId}/apply:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: proposalId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Proposal ID
+    post:
+      tags: [Documents]
+      summary: Apply proposal
+      description: Apply a proposal to the document
+      operationId: applyProposal
+      responses:
+        '200':
+          description: Proposal applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposalId:
+                    type: integer
+                  changes:
+                    type: object
+
+  # ==================== USERS & SESSIONS ====================
+  /api/profile/user:
+    get:
+      tags: [Users]
+      summary: Get user profile
+      description: Get current user's profile information
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FullUser'
+
+  /api/profile/user/name:
+    post:
+      tags: [Users]
+      summary: Update user name
+      description: Update current user's display name
+      operationId: updateUserName
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Name updated
+
+  /api/profile/user/locale:
+    post:
+      tags: [Users]
+      summary: Update user locale
+      description: Update current user's locale preference
+      operationId: updateUserLocale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Locale updated
+
+  /api/profile/allowGoogleLogin:
+    post:
+      tags: [Users]
+      summary: Update Google login setting
+      description: Enable/disable Google login for email+password users
+      operationId: updateAllowGoogleLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [allowGoogleLogin]
+              properties:
+                allowGoogleLogin:
+                  type: boolean
+      responses:
+        '200':
+          description: Setting updated
+
+  /api/profile/isConsultant:
+    post:
+      tags: [Users]
+      summary: Update consultant status
+      description: Enable/disable consultant status (support user only)
+      operationId: updateIsConsultant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId, isConsultant]
+              properties:
+                userId:
+                  type: integer
+                isConsultant:
+                  type: boolean
+      responses:
+        '200':
+          description: Status updated
+
+  /api/profile/apikey:
+    get:
+      tags: [Users]
+      summary: Get API key
+      description: Get current user's API key
+      operationId: getUserApiKey
+      responses:
+        '200':
+          description: API key
+          content:
+            text/plain:
+              schema:
+                type: string
+    post:
+      tags: [Users]
+      summary: Create API key
+      description: Create or regenerate user's API key
+      operationId: createUserApiKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+                  description: Force regenerate even if key exists
+      responses:
+        '200':
+          description: API key
+          content:
+            text/plain:
+              schema:
+                type: string
+    delete:
+      tags: [Users]
+      summary: Delete API key
+      description: Delete user's API key
+      operationId: deleteUserApiKey
+      responses:
+        '200':
+          description: API key deleted
+
+  /api/users/{userId}/disable:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: User ID
+    post:
+      tags: [Users]
+      summary: Disable user
+      description: Disable a user account (install admin only)
+      operationId: disableUser
+      responses:
+        '200':
+          description: User disabled
+
+  /api/users/{userId}/enable:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: User ID
+    post:
+      tags: [Users]
+      summary: Enable user
+      description: Enable a disabled user account (install admin only)
+      operationId: enableUser
+      responses:
+        '200':
+          description: User enabled
+
+  /api/users/{uid}:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: User ID
+    delete:
+      tags: [Users]
+      summary: Delete user
+      description: Delete user and their personal organization
+      operationId: deleteUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  description: User name for confirmation
+      responses:
+        '200':
+          description: User deleted
+
+  /api/session/access/active:
+    get:
+      tags: [Sessions]
+      summary: Get active session
+      description: Get active user and organization
+      operationId: getActiveSession
+      responses:
+        '200':
+          description: Active session info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveSessionInfo'
+    post:
+      tags: [Sessions]
+      summary: Set active session
+      description: Set active user profile for current organization
+      operationId: setActiveSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                org:
+                  type: string
+                  description: Organization domain or 'current'
+      responses:
+        '200':
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+
+  /api/session/access/all:
+    get:
+      tags: [Sessions]
+      summary: Get all session profiles
+      description: Get all user profiles and orgs accessible in this session
+      operationId: getAllSessions
+      responses:
+        '200':
+          description: All accessible profiles and orgs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FullUser'
+                  orgs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+
+  # ==================== SERVICE ACCOUNTS ====================
+  /api/service-accounts:
+    get:
+      tags: [Service Accounts]
+      summary: List service accounts
+      description: Get all service accounts owned by current user
+      operationId: listServiceAccounts
+      responses:
+        '200':
+          description: List of service accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceAccountResponse'
+    post:
+      tags: [Service Accounts]
+      summary: Create service account
+      description: Create a new service account
+      operationId: createServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, expiresAt]
+              properties:
+                label:
+                  type: string
+                description:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Created service account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountCreationResponse'
+
+  /api/service-accounts/{said}:
+    parameters:
+      - name: said
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Service account ID
+    get:
+      tags: [Service Accounts]
+      summary: Get service account
+      description: Get a specific service account
+      operationId: getServiceAccount
+      responses:
+        '200':
+          description: Service account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountResponse'
+    patch:
+      tags: [Service Accounts]
+      summary: Update service account
+      description: Update service account properties
+      operationId: updateServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                description:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Service account updated
+    delete:
+      tags: [Service Accounts]
+      summary: Delete service account
+      description: Delete a service account
+      operationId: deleteServiceAccount
+      responses:
+        '200':
+          description: Service account deleted
+
+  /api/service-accounts/{said}/apikey:
+    parameters:
+      - name: said
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Service account ID
+    post:
+      tags: [Service Accounts]
+      summary: Regenerate API key
+      description: Regenerate the API key for a service account
+      operationId: regenerateServiceAccountKey
+      responses:
+        '200':
+          description: New API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountCreationResponse'
+    delete:
+      tags: [Service Accounts]
+      summary: Delete API key
+      description: Delete the API key for a service account
+      operationId: deleteServiceAccountKey
+      responses:
+        '200':
+          description: API key deleted
+
+  # ==================== TEMPLATES ====================
+  /api/templates:
+    get:
+      tags: [Templates]
+      summary: List templates
+      description: Get all available templates
+      operationId: listTemplates
+      responses:
+        '200':
+          description: List of template workspaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workspace'
+
+  /api/templates/{did}:
+    parameters:
+      - name: did
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Template document ID
+    get:
+      tags: [Templates]
+      summary: Get template
+      description: Get information about a template document
+      operationId: getTemplate
+      responses:
+        '200':
+          description: Template document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+
+  # ==================== WIDGETS ====================
+  /api/widgets:
+    get:
+      tags: [Documents]
+      summary: List custom widgets
+      description: Get list of available custom widgets
+      operationId: listWidgets
+      responses:
+        '200':
+          description: List of widgets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  # ==================== FORMS ====================
+  /api/docs/{docId}/forms/{vsId}:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+      - name: vsId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: View section ID
+    get:
+      tags: [Documents]
+      summary: Get form data
+      description: Get form configuration and schema for a view section
+      operationId: getFormData
+      responses:
+        '200':
+          description: Form data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formFieldsById:
+                    type: object
+                  formLayoutSpec:
+                    type: string
+                  formTableId:
+                    type: string
+                  formTitle:
+                    type: string
+
+  # ==================== TIMING ====================
+  /api/docs/{docId}/timing:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    get:
+      tags: [Documents]
+      summary: Get timing status
+      description: Check if formula timing is enabled (owners only)
+      operationId: getTimingStatus
+      responses:
+        '200':
+          description: Timing status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [disabled, active, pending]
+                  timing:
+                    type: object
+
+  /api/docs/{docId}/timing/start:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Start timing
+      description: Start recording formula timing information (owners only)
+      operationId: startTiming
+      responses:
+        '200':
+          description: Timing started
+
+  /api/docs/{docId}/timing/stop:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Stop timing
+      description: Stop recording formula timing and get results (owners only)
+      operationId: stopTiming
+      responses:
+        '200':
+          description: Timing results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+
+  # ==================== ASSISTANT ====================
+  /api/docs/{docId}/assistant:
+    parameters:
+      - $ref: '#/components/parameters/DocId'
+    post:
+      tags: [Documents]
+      summary: Get AI assistance
+      description: Get AI assistant completions (requires OpenAI API key)
+      operationId: getAssistance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: object
+                    properties:
+                      usage:
+                        type: number
+                      limit:
+                        type: number
+
+  # ==================== ADMIN ====================
+  /admin:
+    get:
+      tags: [Admin]
+      summary: Admin panel
+      description: Admin panel landing page
+      operationId: getAdminPanel
+      responses:
+        '200':
+          description: Admin panel HTML
+
+  /api/admin/restart:
+    post:
+      tags: [Admin]
+      summary: Restart server
+      description: Restart the Grist server (requires supervisor)
+      operationId: restartServer
+      responses:
+        '200':
+          description: Restart initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg:
+                    type: string
+        '409':
+          description: Cannot restart automatically
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/install/prefs:
+    get:
+      tags: [Admin]
+      summary: Get install preferences
+      description: Get installation-level preferences (install admin only)
+      operationId: getInstallPrefs
+      responses:
+        '200':
+          description: Install preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  telemetry:
+                    type: object
+                  checkForLatestVersion:
+                    type: boolean
+    patch:
+      tags: [Admin]
+      summary: Update install preferences
+      description: Update installation-level preferences (install admin only)
+      operationId: updateInstallPrefs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                telemetry:
+                  type: object
+                checkForLatestVersion:
+                  type: boolean
+      responses:
+        '200':
+          description: Preferences updated
+
+  /api/install/updates:
+    get:
+      tags: [Admin]
+      summary: Check for updates
+      description: Check for latest Grist version (install admin only)
+      operationId: checkUpdates
+      responses:
+        '200':
+          description: Update information
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/install/configs/{key}:
+    parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Config key
+    get:
+      tags: [Admin]
+      summary: Get install config
+      description: Get installation-level configuration (install admin only)
+      operationId: getInstallConfig
+      responses:
+        '200':
+          description: Config value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    put:
+      tags: [Admin]
+      summary: Set install config
+      description: Set installation-level configuration (install admin only)
+      operationId: setInstallConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    delete:
+      tags: [Admin]
+      summary: Delete install config
+      description: Delete installation-level configuration (install admin only)
+      operationId: deleteInstallConfig
+      responses:
+        '200':
+          description: Config deleted
+
+  /api/orgs/{oid}/configs/{key}:
+    parameters:
+      - $ref: '#/components/parameters/OrgId'
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Config key
+    get:
+      tags: [Admin]
+      summary: Get org config
+      description: Get organization-level configuration (install admin only)
+      operationId: getOrgConfig
+      responses:
+        '200':
+          description: Config value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    put:
+      tags: [Admin]
+      summary: Set org config
+      description: Set organization-level configuration (install admin only)
+      operationId: setOrgConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    delete:
+      tags: [Admin]
+      summary: Delete org config
+      description: Delete organization-level configuration (install admin only)
+      operationId: deleteOrgConfig
+      responses:
+        '200':
+          description: Config deleted
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: User API key as `Bearer <api-key>`
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT access token
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: grist_sid
+      description: Session cookie
+
+  parameters:
+    OrgId:
+      name: oid
+      in: path
+      required: true
+      schema:
+        oneOf:
+          - type: integer
+          - type: string
+      description: Organization ID (integer), domain (string), or 'current' for org from URL
+
+    WorkspaceId:
+      name: wid
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Workspace ID
+
+    DocId:
+      name: docId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Document ID
+
+    TableId:
+      name: tableId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Table ID
+
+    FilterParam:
+      name: filter
+      in: query
+      schema:
+        type: string
+      description: Filter as JSON object mapping column IDs to arrays of values
+
+    SortParam:
+      name: sort
+      in: query
+      schema:
+        type: string
+      description: Comma-separated column IDs to sort by (prefix with '-' for descending)
+
+    LimitParam:
+      name: limit
+      in: query
+      schema:
+        type: integer
+      description: Maximum number of rows to return
+
+    ExportTableId:
+      name: tableId
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Table ID to export
+
+    ExportViewSection:
+      name: viewSection
+      in: query
+      schema:
+        type: integer
+      description: View section ID for export options
+
+    ExportSortSpec:
+      name: activeSortSpec
+      in: query
+      schema:
+        type: string
+      description: Sort specification as JSON
+
+    ExportFilters:
+      name: filters
+      in: query
+      schema:
+        type: string
+      description: Filters as JSON
+
+  schemas:
+    # ==================== COMMON ====================
+    CommonProperties:
+      type: object
+      properties:
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        removedAt:
+          type: string
+          format: date-time
+          nullable: true
+        public:
+          type: boolean
+
+    # ==================== ORGANIZATIONS ====================
+    OrganizationProperties:
+      allOf:
+        - $ref: '#/components/schemas/CommonProperties'
+        - type: object
+          properties:
+            domain:
+              type: string
+              nullable: true
+            userOrgPrefs:
+              type: object
+            orgPrefs:
+              type: object
+            userPrefs:
+              type: object
+
+    Organization:
+      allOf:
+        - $ref: '#/components/schemas/OrganizationProperties'
+        - type: object
+          required: [id, access]
+          properties:
+            id:
+              type: integer
+            access:
+              type: string
+              enum: [owners, editors, viewers, members]
+            owner:
+              $ref: '#/components/schemas/FullUser'
+              nullable: true
+            billingAccount:
+              $ref: '#/components/schemas/BillingAccount'
+            host:
+              type: string
+              nullable: true
+
+    BillingAccount:
+      type: object
+      properties:
+        id:
+          type: integer
+        individual:
+          type: boolean
+        product:
+          type: object
+        stripePlanId:
+          type: string
+        isManager:
+          type: boolean
+        inGoodStanding:
+          type: boolean
+        features:
+          type: object
+        externalOptions:
+          type: object
+          properties:
+            invoiceId:
+              type: string
+
+    OrgUsageSummary:
+      type: object
+      properties:
+        usage:
+          type: object
+        limits:
+          type: object
+
+    # ==================== WORKSPACES ====================
+    WorkspaceProperties:
+      $ref: '#/components/schemas/CommonProperties'
+
+    Workspace:
+      allOf:
+        - $ref: '#/components/schemas/WorkspaceProperties'
+        - type: object
+          required: [id, access, org]
+          properties:
+            id:
+              type: integer
+            docs:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+            org:
+              $ref: '#/components/schemas/Organization'
+            orgDomain:
+              type: string
+            access:
+              type: string
+              enum: [owners, editors, viewers, members]
+            owner:
+              $ref: '#/components/schemas/FullUser'
+            isSupportWorkspace:
+              type: boolean
+
+    # ==================== DOCUMENTS ====================
+    DocumentProperties:
+      allOf:
+        - $ref: '#/components/schemas/CommonProperties'
+        - type: object
+          properties:
+            isPinned:
+              type: boolean
+            urlId:
+              type: string
+              nullable: true
+            trunkId:
+              type: string
+              nullable: true
+            type:
+              type: string
+              enum: [normal, template, tutorial]
+              nullable: true
+            options:
+              $ref: '#/components/schemas/DocumentOptions'
+
+    DocumentOptions:
+      type: object
+      properties:
+        description:
+          type: string
+          nullable: true
+        icon:
+          type: string
+          nullable: true
+        openMode:
+          type: string
+          nullable: true
+        externalId:
+          type: string
+          nullable: true
+        tutorial:
+          type: object
+          properties:
+            lastSlideIndex:
+              type: integer
+            percentComplete:
+              type: number
+        appearance:
+          type: object
+        allowIndex:
+          type: boolean
+        proposedChanges:
+          type: object
+
+    Document:
+      allOf:
+        - $ref: '#/components/schemas/DocumentProperties'
+        - type: object
+          required: [id, workspace, access]
+          properties:
+            id:
+              type: string
+            workspace:
+              $ref: '#/components/schemas/Workspace'
+            access:
+              type: string
+              enum: [owners, editors, viewers, members]
+            trunkAccess:
+              type: string
+              enum: [owners, editors, viewers, members]
+              nullable: true
+            forks:
+              type: array
+              items:
+                $ref: '#/components/schemas/Fork'
+
+    Fork:
+      type: object
+      required: [id, trunkId, updatedAt]
+      properties:
+        id:
+          type: string
+        trunkId:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        options:
+          $ref: '#/components/schemas/DocumentOptions'
+
+    Proposal:
+      type: object
+      properties:
+        shortId:
+          type: integer
+        comparison:
+          type: object
+        status:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [applied, retracted, dismissed]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        appliedAt:
+          type: string
+          format: date-time
+          nullable: true
+        srcDocId:
+          type: string
+        srcDoc:
+          type: object
+        destDocId:
+          type: string
+        destDoc:
+          type: object
+
+    DocCreationInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+
+    DocReplacementOptions:
+      type: object
+      properties:
+        sourceDocId:
+          type: string
+        snapshotId:
+          type: string
+        resetTutorialMetadata:
+          type: boolean
+
+    ForkResult:
+      type: object
+      properties:
+        urlId:
+          type: string
+        docId:
+          type: string
+
+    # ==================== TABLES & COLUMNS ====================
+    TableRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        fields:
+          type: object
+
+    TablePost:
+      type: object
+      properties:
+        id:
+          type: string
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              fields:
+                type: object
+
+    TablesPost:
+      type: object
+      required: [tables]
+      properties:
+        tables:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/TablePost'
+
+    TablesPatch:
+      type: object
+      required: [tables]
+      properties:
+        tables:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              fields:
+                type: object
+
+    ColumnRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        fields:
+          type: object
+          properties:
+            colRef:
+              type: integer
+            parentId:
+              type: integer
+            parentPos:
+              type: number
+            colId:
+              type: string
+            type:
+              type: string
+            isFormula:
+              type: boolean
+            formula:
+              type: string
+            label:
+              type: string
+            description:
+              type: string
+            widgetOptions:
+              type: string
+
+    ColumnsPost:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              fields:
+                type: object
+
+    ColumnsPatch:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              fields:
+                type: object
+
+    ColumnsPut:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              fields:
+                type: object
+
+    # ==================== RECORDS ====================
+    CellValue:
+      description: |
+        A cell value can be null, boolean, number, string, or array.
+        Note: null values are supported but not explicitly represented in this schema due to OpenAPI 3.0 limitations.
+      anyOf:
+        - type: boolean
+        - type: number
+        - type: string
+        - type: array
+          items: {}
+
+    TableColValues:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: array
+          items:
+            type: integer
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/CellValue'
+
+    BulkColValues:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          $ref: '#/components/schemas/CellValue'
+
+    TableRecordValue:
+      type: object
+      required: [id, fields]
+      properties:
+        id:
+          type: integer
+        fields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CellValue'
+        errors:
+          type: object
+          additionalProperties:
+            type: string
+
+    NewRecord:
+      type: object
+      properties:
+        fields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CellValue'
+
+    Record:
+      type: object
+      required: [id, fields]
+      properties:
+        id:
+          type: integer
+        fields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CellValue'
+
+    AddOrUpdateRecord:
+      type: object
+      required: [require]
+      properties:
+        require:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CellValue'
+          properties:
+            id:
+              type: integer
+        fields:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/CellValue'
+
+    RecordsPost:
+      type: object
+      required: [records]
+      properties:
+        records:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/NewRecord'
+
+    RecordsPatch:
+      type: object
+      required: [records]
+      properties:
+        records:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Record'
+
+    RecordsPut:
+      type: object
+      required: [records]
+      properties:
+        records:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AddOrUpdateRecord'
+
+    # ==================== SQL ====================
+    SqlPost:
+      type: object
+      required: [sql]
+      properties:
+        sql:
+          type: string
+          description: SQL query
+        args:
+          type: array
+          description: Query parameters
+          nullable: true
+        timeout:
+          type: integer
+          description: Query timeout in milliseconds
+
+    SqlResult:
+      type: object
+      properties:
+        statement:
+          type: string
+        records:
+          type: array
+          items:
+            type: object
+            properties:
+              fields:
+                type: object
+
+    # ==================== USER ACTIONS ====================
+    UserAction:
+      type: array
+      items: {}
+      description: User action in format [action_type, table_id, ...args]
+
+    ApplyUAResult:
+      type: object
+      properties:
+        actionNum:
+          type: integer
+        retValues:
+          type: array
+        isModification:
+          type: boolean
+
+    # ==================== ATTACHMENTS ====================
+    AttachmentMetadata:
+      type: object
+      properties:
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        timeUploaded:
+          type: string
+          format: date-time
+
+    AttachmentRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        fields:
+          $ref: '#/components/schemas/AttachmentMetadata'
+
+    ArchiveUploadResult:
+      type: object
+      properties:
+        added:
+          type: integer
+        errored:
+          type: integer
+        unused:
+          type: integer
+
+    AttachmentTransferStatus:
+      type: object
+      properties:
+        status:
+          type: object
+          properties:
+            pendingTransferCount:
+              type: integer
+            isRunning:
+              type: boolean
+            failures:
+              type: integer
+            successes:
+              type: integer
+        locationSummary:
+          type: string
+          enum: [none, internal, mixed, external]
+
+    # ==================== WEBHOOKS ====================
+    WebhookFields:
+      type: object
+      properties:
+        tableId:
+          type: string
+        url:
+          type: string
+        eventTypes:
+          type: array
+          items:
+            type: string
+            enum: [add, update]
+        watchedColIds:
+          type: array
+          items:
+            type: string
+        isReadyColumn:
+          type: string
+          nullable: true
+        name:
+          type: string
+        memo:
+          type: string
+        enabled:
+          type: boolean
+        authorization:
+          type: string
+
+    WebhookSummaryCollection:
+      type: object
+      properties:
+        webhooks:
+          type: array
+          items:
+            type: object
+
+    # ==================== SNAPSHOTS ====================
+    DocSnapshot:
+      type: object
+      properties:
+        lastModified:
+          type: string
+          format: date-time
+        snapshotId:
+          type: string
+        docId:
+          type: string
+
+    DocState:
+      type: object
+      properties:
+        h:
+          type: string
+          description: Hash
+        n:
+          type: integer
+          description: Action number
+        t:
+          type: integer
+          description: Timestamp
+
+    DocStates:
+      type: object
+      properties:
+        states:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocState'
+
+    DocStateComparison:
+      type: object
+      properties:
+        left:
+          $ref: '#/components/schemas/DocState'
+        right:
+          $ref: '#/components/schemas/DocState'
+        parent:
+          $ref: '#/components/schemas/DocState'
+          nullable: true
+        summary:
+          type: string
+          enum: [same, left, right, both, unrelated]
+        details:
+          type: object
+
+    # ==================== USERS ====================
+    FullUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        picture:
+          type: string
+          nullable: true
+        ref:
+          type: string
+          nullable: true
+        locale:
+          type: string
+        loginMethod:
+          type: string
+        allowGoogleLogin:
+          type: boolean
+        helpScoutSignature:
+          type: string
+        isInstallAdmin:
+          type: boolean
+
+    ActiveSessionInfo:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/FullUser'
+        org:
+          $ref: '#/components/schemas/Organization'
+          nullable: true
+        orgError:
+          type: object
+          properties:
+            error:
+              type: string
+            status:
+              type: integer
+
+    # ==================== ACCESS CONTROL ====================
+    PermissionDelta:
+      type: object
+      properties:
+        maxInheritedRole:
+          type: string
+          enum: [owners, editors, viewers, members]
+          nullable: true
+        users:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [owners, editors, viewers, members]
+            nullable: true
+
+    PermissionData:
+      type: object
+      properties:
+        personal:
+          type: boolean
+        public:
+          type: boolean
+        maxInheritedRole:
+          type: string
+          enum: [owners, editors, viewers, members]
+          nullable: true
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserAccessData'
+
+    UserAccessData:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        ref:
+          type: string
+          nullable: true
+        picture:
+          type: string
+          nullable: true
+        access:
+          type: string
+          enum: [owners, editors, viewers, members]
+          nullable: true
+        parentAccess:
+          type: string
+          enum: [owners, editors, viewers, members]
+          nullable: true
+        orgAccess:
+          type: string
+          enum: [owners, editors, viewers, members]
+          nullable: true
+        anonymous:
+          type: boolean
+        isMember:
+          type: boolean
+        disabledAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ==================== SERVICE ACCOUNTS ====================
+    ServiceAccountResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        login:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        hasValidKey:
+          type: boolean
+
+    ServiceAccountCreationResponse:
+      allOf:
+        - $ref: '#/components/schemas/ServiceAccountResponse'
+        - type: object
+          properties:
+            key:
+              type: string
+              description: API key (only returned on creation/regeneration)
+
+    # ==================== CONFIG ====================
+    ConfigResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        value:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        org:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            domain:
+              type: string
