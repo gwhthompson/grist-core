@@ -71,7 +71,7 @@ export type GristType =
 // ============================================================================
 
 export interface FormatOptions {
-  [option: string]: unknown;
+  [option: string]: any;
 }
 
 export type NumMode = 'currency' | 'decimal' | 'percent' | 'scientific';
@@ -375,7 +375,7 @@ export interface ApplyUAOptions {
 export interface ApplyUAResult {
   actionNum: number;
   actionHash: string | null;
-  retValues: unknown[];
+  retValues: any[];
   isModification: boolean;
 }
 
@@ -383,7 +383,7 @@ export interface GristDocAPI {
   getDocName(): Promise<string>;
   listTables(): Promise<string[]>;
   fetchTable(tableId: string): Promise<RowRecords>;
-  applyUserActions(actions: unknown[][], options?: ApplyUAOptions): Promise<ApplyUAResult>;
+  applyUserActions(actions: any[][], options?: ApplyUAOptions): Promise<ApplyUAResult>;
   getAccessToken(options: AccessTokenOptions): Promise<AccessTokenResult>;
 }
 
@@ -444,10 +444,10 @@ export interface CustomSectionAPI {
 
 export interface WidgetAPI {
   getOptions(): Promise<object | null>;
-  setOptions(options: { [key: string]: unknown }): Promise<void>;
+  setOptions(options: { [key: string]: any }): Promise<void>;
   clearOptions(): Promise<void>;
-  setOption(key: string, value: unknown): Promise<void>;
-  getOption(key: string): Promise<unknown>;
+  setOption(key: string, value: any): Promise<void>;
+  getOption(key: string): Promise<any>;
 }
 
 // ============================================================================
@@ -506,7 +506,7 @@ export interface GristColumn {
 export interface GristTable {
   table_name: string | null;
   column_metadata: GristColumn[];
-  table_data: unknown[][];
+  table_data: any[][];
 }
 
 export interface GristTables {
@@ -518,7 +518,7 @@ export interface GristTables {
 // ============================================================================
 
 export interface FileContent {
-  content: unknown;
+  content: any;
   name: string;
 }
 
@@ -580,9 +580,9 @@ export interface ParseFileAPI {
 // ============================================================================
 
 export interface Storage {
-  getItem(key: string): unknown;
+  getItem(key: string): any;
   hasItem(key: string): boolean;
-  setItem(key: string, value: unknown): void;
+  setItem(key: string, value: any): void;
   removeItem(key: string): void;
   clear(): void;
 }
@@ -757,7 +757,7 @@ export interface RecordsPut {
 
 export interface SqlPost {
   sql: string;
-  args?: unknown[] | null;
+  args?: any[] | null;
   timeout?: number;
 }
 
@@ -912,7 +912,6 @@ export interface UserProfile {
 export interface Features {
   vanityDomain?: boolean;
   workspaces?: boolean;
-  [key: string]: unknown;
 }
 
 export interface Product {
@@ -1072,20 +1071,20 @@ export interface GristPluginAPI {
   getAccessToken(options?: AccessTokenOptions): Promise<AccessTokenResult>;
   fetchSelectedTable(options?: FetchSelectedOptions): Promise<RowRecords | RowRecord[]>;
   fetchSelectedRecord(rowId: number, options?: FetchSelectedOptions): Promise<RowRecord>;
-  onRecord(callback: (data: RowRecord | null, mappings: WidgetColumnMap | null) => unknown, options?: FetchSelectedOptions): void;
-  onNewRecord(callback: (mappings: WidgetColumnMap | null) => unknown): void;
-  onRecords(callback: (data: RowRecord[], mappings: WidgetColumnMap | null) => unknown, options?: FetchSelectedOptions): void;
-  onOptions(callback: (options: unknown, settings: InteractionOptions) => unknown): void;
+  onRecord(callback: (data: RowRecord | null, mappings: WidgetColumnMap | null) => any, options?: FetchSelectedOptions): void;
+  onNewRecord(callback: (mappings: WidgetColumnMap | null) => any): void;
+  onRecords(callback: (data: RowRecord[], mappings: WidgetColumnMap | null) => any, options?: FetchSelectedOptions): void;
+  onOptions(callback: (options: any, settings: InteractionOptions) => any): void;
   allowSelectBy(): Promise<void>;
   setSelectedRows(rowIds: number[] | null): Promise<void>;
   setCursorPos(pos: CursorPos): Promise<void>;
-  getOption(key: string): Promise<unknown>;
-  setOption(key: string, value: unknown): Promise<void>;
-  setOptions(options: { [key: string]: unknown }): Promise<void>;
+  getOption(key: string): Promise<any>;
+  setOption(key: string, value: any): Promise<void>;
+  setOptions(options: { [key: string]: any }): Promise<void>;
   getOptions(): Promise<object | null>;
   clearOptions(): Promise<void>;
-  mapColumnNames(data: unknown, options?: { columns?: ColumnsToMap; mappings?: WidgetColumnMap | null; reverse?: boolean }): unknown;
-  mapColumnNamesBack(data: unknown, options?: { columns?: ColumnsToMap; mappings?: WidgetColumnMap | null }): unknown;
+  mapColumnNames(data: any, options?: { columns?: ColumnsToMap; mappings?: WidgetColumnMap | null; reverse?: boolean }): any;
+  mapColumnNamesBack(data: any, options?: { columns?: ColumnsToMap; mappings?: WidgetColumnMap | null }): any;
 }
 
 declare global {
