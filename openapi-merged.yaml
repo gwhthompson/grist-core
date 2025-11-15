@@ -1,0 +1,4274 @@
+info:
+  description: 'An API for manipulating Grist sites, workspaces, and documents.
+
+
+    # Authentication
+
+    <SecurityDefinitions />
+
+    '
+  version: 1.0.1
+  title: Grist API
+openapi: 3.0.0
+security:
+- ApiKey: []
+servers:
+- url: https://{subdomain}.getgrist.com/api
+  variables:
+    subdomain:
+      description: The team name, or `docs` for personal areas
+      default: docs
+  description: Grist API server
+paths:
+  /orgs:
+    get:
+      operationId: listOrgs
+      tags:
+      - orgs
+      summary: List the orgs you have access to
+      description: This enumerates all the team sites or personal areas available.
+      responses:
+        200:
+          description: An array of organizations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orgs'
+  /orgs/{orgId}:
+    get:
+      operationId: describeOrg
+      tags:
+      - orgs
+      summary: Describe an org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        200:
+          description: An organization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Org'
+    patch:
+      operationId: modifyOrg
+      tags:
+      - orgs
+      summary: Modify an org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrgParameters'
+        required: true
+      responses:
+        200:
+          description: Success
+    delete:
+      operationId: deleteOrg
+      tags:
+      - orgs
+      summary: Delete an org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        200:
+          description: Success
+        403:
+          description: Access denied
+        404:
+          description: Not found
+  /orgs/{orgId}/access:
+    get:
+      operationId: listOrgAccess
+      tags:
+      - orgs
+      summary: List users with access to org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        200:
+          description: Users with access to org
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgAccessRead'
+    patch:
+      operationId: modifyOrgAccess
+      tags:
+      - orgs
+      summary: Change who has access to org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - delta
+              properties:
+                delta:
+                  $ref: '#/components/schemas/OrgAccessWrite'
+        required: true
+      responses:
+        200:
+          description: Success
+  /orgs/{orgId}/workspaces:
+    get:
+      operationId: listWorkspaces
+      tags:
+      - workspaces
+      summary: List workspaces and documents within an org
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      responses:
+        200:
+          description: An org's workspaces and documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WorkspaceWithDocsAndDomain'
+    post:
+      operationId: createWorkspace
+      tags:
+      - workspaces
+      summary: Create an empty workspace
+      parameters:
+      - $ref: '#/components/parameters/orgIdPathParam'
+      requestBody:
+        description: settings for the workspace
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceParameters'
+        required: true
+      responses:
+        200:
+          description: The workspace id
+          content:
+            application/json:
+              schema:
+                type: integer
+                description: an identifier for the workspace
+                example: 155
+  /workspaces/{workspaceId}:
+    get:
+      operationId: describeWorkspace
+      tags:
+      - workspaces
+      summary: Describe a workspace
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      responses:
+        200:
+          description: A workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceWithDocsAndOrg'
+    patch:
+      operationId: modifyWorkspace
+      tags:
+      - workspaces
+      summary: Modify a workspace
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceParameters'
+        required: true
+      responses:
+        200:
+          description: Success
+    delete:
+      operationId: deleteWorkspace
+      tags:
+      - workspaces
+      summary: Delete a workspace
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      responses:
+        200:
+          description: Success
+  /workspaces/{workspaceId}/docs:
+    post:
+      operationId: createDoc
+      tags:
+      - docs
+      summary: Create an empty document
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      requestBody:
+        description: settings for the document
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocParameters'
+        required: true
+      responses:
+        200:
+          description: The document id
+          content:
+            application/json:
+              schema:
+                type: string
+                description: a unique identifier for the document
+                example: 9PJhBDZPyCNoayZxaCwFfS
+  /workspaces/{workspaceId}/import:
+    post:
+      operationId: importDoc
+      tags:
+      - docs
+      summary: Import an existing document
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      requestBody:
+        description: settings for the document
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  description: Contents of a .grist file, as a standard multipart/form-data file entry
+                  type: string
+                  format: binary
+                documentName:
+                  type: string
+                  example: Example Doc
+        required: true
+      responses:
+        200:
+          description: The document id
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: a unique identifier for the document
+                    example: 9PJhBDZPyCNoayZxaCwFfS
+  /workspaces/{workspaceId}/access:
+    get:
+      operationId: listWorkspaceAccess
+      tags:
+      - workspaces
+      summary: List users with access to workspace
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      responses:
+        200:
+          description: Users with access to workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceAccessRead'
+    patch:
+      operationId: modifyWorkspaceAccess
+      tags:
+      - workspaces
+      summary: Change who has access to workspace
+      parameters:
+      - $ref: '#/components/parameters/workspaceIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - delta
+              properties:
+                delta:
+                  $ref: '#/components/schemas/WorkspaceAccessWrite'
+        required: true
+      responses:
+        200:
+          description: Success
+  /docs/{docId}:
+    get:
+      operationId: describeDoc
+      tags:
+      - docs
+      summary: Describe a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: A document's metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocWithWorkspace'
+    patch:
+      operationId: modifyDoc
+      tags:
+      - docs
+      summary: Modify document metadata (but not its contents)
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocParameters'
+        required: true
+      responses:
+        200:
+          description: Success
+    delete:
+      operationId: deleteDoc
+      tags:
+      - docs
+      summary: Delete a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/move:
+    patch:
+      operationId: moveDoc
+      tags:
+      - docs
+      summary: Move document to another workspace.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the target workspace
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - workspace
+              properties:
+                workspace:
+                  type: integer
+                  example: 597
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/copy:
+    post:
+      operationId: copyDoc
+      tags:
+      - docs
+      summary: Copies a document to a workspace.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the target workspace
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - workspaceId
+              - documentName
+              properties:
+                workspaceId:
+                  type: integer
+                  example: 597
+                documentName:
+                  type: string
+                  example: Example Doc
+                asTemplate:
+                  type: boolean
+                  description: Remove all data and history but keep the structure to use the document as a template
+      responses:
+        200:
+          description: The document id
+          content:
+            application/json:
+              schema:
+                description: a unique identifier for the document
+                type: string
+                example: '145'
+  /docs/{docId}/access:
+    get:
+      operationId: listDocAccess
+      tags:
+      - docs
+      summary: List users with access to document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Users with access to document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocAccessRead'
+    patch:
+      operationId: modifyDocAccess
+      tags:
+      - docs
+      summary: Change who has access to document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - delta
+              properties:
+                delta:
+                  $ref: '#/components/schemas/DocAccessWrite'
+        required: true
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/download:
+    get:
+      operationId: downloadDoc
+      tags:
+      - docs
+      summary: Content of document, as an Sqlite file
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: nohistory
+        schema:
+          type: boolean
+          description: Remove document history (can significantly reduce file size)
+        required: false
+      - in: query
+        name: template
+        schema:
+          type: boolean
+          description: Remove all data and history but keep the structure to use the document as a template
+        required: false
+      responses:
+        200:
+          description: A document's content in Sqlite form
+          content:
+            application/x-sqlite3:
+              schema:
+                type: string
+                format: binary
+  /docs/{docId}/download/xlsx:
+    get:
+      operationId: downloadDocXlsx
+      tags:
+      - docs
+      summary: Content of document, as an Excel file
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/headerQueryParam'
+      responses:
+        200:
+          description: A document's content in Excel form
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+  /docs/{docId}/download/csv:
+    get:
+      operationId: downloadDocCsv
+      tags:
+      - docs
+      summary: Content of table, as a CSV file
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: tableId
+        schema:
+          type: string
+          description: Name of a table (normalized).
+        required: true
+      - $ref: '#/components/parameters/headerQueryParam'
+      responses:
+        200:
+          description: A table's content in CSV form
+          content:
+            text/csv:
+              schema:
+                type: string
+  /docs/{docId}/download/table-schema:
+    get:
+      operationId: downloadTableSchema
+      tags:
+      - docs
+      summary: The schema of a table
+      description: The schema follows [frictionlessdata's table-schema standard](https://specs.frictionlessdata.io/table-schema/).
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: tableId
+        schema:
+          type: string
+          description: Name of a table (normalized).
+        required: true
+      - $ref: '#/components/parameters/headerQueryParam'
+      responses:
+        200:
+          description: A table's table-schema in JSON format.
+          content:
+            text/json:
+              schema:
+                $ref: '#/components/schemas/TableSchemaResult'
+  /docs/{docId}/states/remove:
+    post:
+      operationId: deleteActions
+      tags:
+      - docs
+      summary: Truncate the document's action history
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - keep
+              properties:
+                keep:
+                  type: integer
+                  description: The number of the latest history actions to keep
+              example:
+                keep: 3
+      responses:
+        '200':
+          description: Success
+  /docs/{docId}/force-reload:
+    post:
+      operationId: forceReload
+      tags:
+      - docs
+      summary: Reload a document
+      description: Closes and reopens the document, forcing the python engine to restart.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Document reloaded successfully
+  /docs/{docId}/recover:
+    post:
+      operationId: recoverDoc
+      tags:
+      - docs
+      summary: Set recovery mode for a document
+      description: Controls the recovery mode of a document. Recovery mode helps in recovering from errors or corrupted states.
+        Only document owners can control recovery mode.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: Recovery mode settings
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                recoveryMode:
+                  type: boolean
+                  description: Whether to enable recovery mode. Defaults to true if not specified.
+                  example: true
+        required: false
+      responses:
+        200:
+          description: Recovery mode set successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - recoveryMode
+                properties:
+                  recoveryMode:
+                    type: boolean
+                    description: The current recovery mode state of the document
+                    example: true
+        403:
+          description: Access denied - only owners can control recovery mode
+        404:
+          description: Document not found
+  /docs/{docId}/tables/{tableId}/data:
+    get:
+      operationId: getTableData
+      tags:
+      - data
+      summary: Fetch data from a table
+      deprecated: true
+      description: Deprecated in favor of `records` endpoints. We have no immediate plans to remove these endpoints, but consider
+        `records` a better starting point for new projects.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/filterQueryParam'
+      - $ref: '#/components/parameters/sortQueryParam'
+      - $ref: '#/components/parameters/limitQueryParam'
+      - $ref: '#/components/parameters/sortHeaderParam'
+      - $ref: '#/components/parameters/limitHeaderParam'
+      responses:
+        200:
+          description: Cells from the table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Data'
+    post:
+      operationId: addRows
+      tags:
+      - data
+      summary: Add rows to a table
+      deprecated: true
+      description: Deprecated in favor of `records` endpoints. We have no immediate plans to remove these endpoints, but consider
+        `records` a better starting point for new projects.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/noparseQueryParam'
+      requestBody:
+        description: the data to add
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataWithoutId'
+        required: true
+      responses:
+        200:
+          description: IDs of rows added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowIds'
+    patch:
+      operationId: modifyRows
+      tags:
+      - data
+      summary: Modify rows of a table
+      deprecated: true
+      description: Deprecated in favor of `records` endpoints. We have no immediate plans to remove these endpoints, but consider
+        `records` a better starting point for new projects.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/noparseQueryParam'
+      requestBody:
+        description: the data to change, with ids
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Data'
+        required: true
+      responses:
+        200:
+          description: IDs of rows modified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowIds'
+  /docs/{docId}/tables/{tableId}/data/delete:
+    post:
+      operationId: deleteRows
+      tags:
+      - data
+      summary: Delete rows of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      requestBody:
+        description: the IDs of rows to remove
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RowIds'
+        required: true
+      responses:
+        200:
+          description: Nothing returned
+  /docs/{docId}/attachments:
+    get:
+      operationId: listAttachments
+      tags:
+      - attachments
+      summary: List metadata of all attachments in a doc
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/filterQueryParam'
+      - $ref: '#/components/parameters/sortQueryParam'
+      - $ref: '#/components/parameters/limitQueryParam'
+      - $ref: '#/components/parameters/sortHeaderParam'
+      - $ref: '#/components/parameters/limitHeaderParam'
+      responses:
+        200:
+          description: List of attachment metadata records. Note that the list may temporarily include records for attachments
+            that are stored in the document but not referenced by any Attachments type cell.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentMetadataList'
+    post:
+      operationId: uploadAttachments
+      tags:
+      - attachments
+      summary: Upload attachments to a doc
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the files to add to the doc
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttachmentUpload'
+        required: true
+      responses:
+        200:
+          description: IDs of attachments added, one per file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RowIds'
+  /docs/{docId}/attachments/{attachmentId}:
+    get:
+      operationId: getAttachmentMetadata
+      tags:
+      - attachments
+      summary: Get the metadata for an attachment
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: path
+        name: attachmentId
+        schema:
+          $ref: '#/components/schemas/AttachmentId'
+        required: true
+      responses:
+        200:
+          description: Attachment metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentMetadata'
+  /docs/{docId}/attachments/{attachmentId}/download:
+    get:
+      operationId: downloadAttachment
+      tags:
+      - attachments
+      summary: Download the contents of an attachment
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: path
+        name: attachmentId
+        schema:
+          $ref: '#/components/schemas/AttachmentId'
+        required: true
+      responses:
+        200:
+          description: Attachment contents, with suitable Content-Type.
+  /docs/{docId}/attachments/archive:
+    get:
+      operationId: downloadAttachments
+      tags:
+      - attachments
+      summary: Download all attachments
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: format
+        schema:
+          type: string
+          enum:
+          - zip
+          - tar
+      responses:
+        200:
+          description: Archive of all attachments, in either .zip or .tar format.
+    post:
+      operationId: uploadMissingAttachments
+      tags:
+      - attachments
+      summary: Upload missing attachments
+      description: Restores attachments which are missing from external storage.
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: A .tar file downloaded from Grist, containing all the document's attachments.
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The .tar file. Must have `Content-Type=application/x-tar` set.
+      responses:
+        200:
+          description: Summary of attachments used
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+                    description: Total files added to external storage.
+                  errored:
+                    type: integer
+                    description: Total files that errored when attempting to process them.
+                  unused:
+                    type: integer
+                    description: Total files that aren't needed, or don't match an existing attachment.
+  /docs/{docId}/attachments/store:
+    get:
+      operationId: getDocumentAttachmentStore
+      tags:
+      - attachments
+      summary: Get external store
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Document's current external storage setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentStoreSetting'
+    post:
+      operationId: setDocumentAttachmentStore
+      tags:
+      - attachments
+      summary: Set external store
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentStoreSetting'
+      responses:
+        200:
+          description: The ID of the store the document's store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  store:
+                    $ref: '#/components/schemas/DocumentStoreId'
+  /docs/{docId}/attachments/stores:
+    get:
+      operationId: listAttachmentStores
+      tags:
+      - attachments
+      summary: List external attachment stores
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Document's current external storage setting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentStoreSetting'
+  /docs/{docId}/attachments/transferAll:
+    post:
+      operationId: startAttachmentTransfer
+      tags:
+      - attachments
+      summary: Start transferring attachments
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Transfer status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentsTransferStatus'
+  /docs/{docId}/attachments/transferStatus:
+    get:
+      operationId: getAttachmentTransferStatus
+      tags:
+      - attachments
+      summary: Get attachment transfer status
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Transfer status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttachmentsTransferStatus'
+  /docs/{docId}/attachments/removeUnused:
+    post:
+      operationId: removeUnusedAttachments
+      tags:
+      - attachments
+      summary: Delete unused attachments from the document
+      description: 'When an uploaded attachment is no longer used in a Grist document,  it''s retained for a period of time
+        in case it''s needed again (e.g. to facilitate an "undo").
+
+        This removes all of these retained attachments, reducing the amount of storage used. This is particularly useful if
+        a document has hit its attachment storage limit.
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: expiredOnly
+        schema:
+          type: boolean
+          description: Only remove attachments that haven't been used for a period of time. This duration is set by host of
+            the Grist instance.
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/tables/{tableId}/records:
+    get:
+      operationId: listRecords
+      tags:
+      - records
+      summary: Fetch records from a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/filterQueryParam'
+      - $ref: '#/components/parameters/sortQueryParam'
+      - $ref: '#/components/parameters/limitQueryParam'
+      - $ref: '#/components/parameters/sortHeaderParam'
+      - $ref: '#/components/parameters/limitHeaderParam'
+      - $ref: '#/components/parameters/hiddenQueryParam'
+      responses:
+        200:
+          description: Records from the table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordsList'
+    post:
+      operationId: addRecords
+      tags:
+      - records
+      summary: Add records to a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/noparseQueryParam'
+      requestBody:
+        description: the records to add
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsWithoutId'
+        required: true
+      responses:
+        200:
+          description: IDs of records added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordsWithoutFields'
+    patch:
+      operationId: modifyRecords
+      tags:
+      - records
+      summary: Modify records of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/noparseQueryParam'
+      requestBody:
+        description: the records to change, with ids
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsList'
+        required: true
+      responses:
+        200:
+          description: Success
+    put:
+      operationId: replaceRecords
+      tags:
+      - records
+      summary: Add or update records of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/noparseQueryParam'
+      - in: query
+        name: onmany
+        schema:
+          type: string
+          enum:
+          - first
+          - none
+          - all
+          description: "Which records to update if multiple records are found to match `require`.\n  * `first` - the first\
+            \ matching record (default)\n  * `none` - do not update anything\n  * `all` - update all matches\n"
+      - in: query
+        name: noadd
+        schema:
+          type: boolean
+          description: Set to true to prohibit adding records.
+      - in: query
+        name: noupdate
+        schema:
+          type: boolean
+          description: Set to true to prohibit updating records.
+      - in: query
+        name: allow_empty_require
+        schema:
+          type: boolean
+          description: Set to true to allow `require` in the body to be empty, which will match and update all records in
+            the table.
+      requestBody:
+        description: 'The records to add or update. Instead of an id, a `require` object is provided, with the same structure
+          as `fields`. If no query parameter options are set, then the operation is as follows. First, we check if a record
+          exists matching the values specified for columns in `require`. If so, we update it by setting the values specified
+          for columns in `fields`. If not, we create a new record with a combination of the values in `require` and `fields`,
+          with `fields` taking priority if the same column is specified in both. The query parameters allow for variations
+          on this behavior.
+
+          '
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordsWithRequire'
+        required: true
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/tables:
+    get:
+      operationId: listTables
+      tags:
+      - tables
+      summary: List tables in a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: The tables in a document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TablesList'
+    post:
+      operationId: addTables
+      tags:
+      - tables
+      summary: Add tables to a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the tables to add
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTables'
+        required: true
+      responses:
+        200:
+          description: The table created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TablesWithoutFields'
+    patch:
+      operationId: modifyTables
+      tags:
+      - tables
+      summary: Modify tables of a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: the tables to change, with ids
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TablesList'
+        required: true
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/tables/{tableId}/columns:
+    get:
+      operationId: listColumns
+      tags:
+      - columns
+      summary: List columns in a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/hiddenQueryParam'
+      responses:
+        200:
+          description: The columns in a table
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnsList'
+    post:
+      operationId: addColumns
+      tags:
+      - columns
+      summary: Add columns to a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      requestBody:
+        description: the columns to add
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateColumns'
+        required: true
+      responses:
+        200:
+          description: The columns created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ColumnsWithoutFields'
+    patch:
+      operationId: modifyColumns
+      tags:
+      - columns
+      summary: Modify columns of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      requestBody:
+        description: the columns to change, with ids
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateColumns'
+        required: true
+      responses:
+        200:
+          description: Success
+    put:
+      operationId: replaceColumns
+      tags:
+      - columns
+      summary: Add or update columns of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - in: query
+        name: noadd
+        schema:
+          type: boolean
+          description: Set to true to prohibit adding columns.
+      - in: query
+        name: noupdate
+        schema:
+          type: boolean
+          description: Set to true to prohibit updating columns.
+      - in: query
+        name: replaceall
+        schema:
+          type: boolean
+          description: Set to true to remove existing columns (except the hidden ones) that are not specified in the request
+            body.
+      requestBody:
+        description: 'The columns to add or update. We check whether the specified column ID exists: if so, the column is
+          updated with the provided data, otherwise a new column is created.
+
+          Also note that some query parameters alter this behavior.
+
+          '
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateColumns'
+        required: true
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/tables/{tableId}/columns/{colId}:
+    delete:
+      operationId: deleteColumn
+      tags:
+      - columns
+      summary: Delete a column of a table
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - $ref: '#/components/parameters/tableIdPathParam'
+      - $ref: '#/components/parameters/colIdPathParam'
+      responses:
+        200:
+          description: Success
+  /docs/{docId}/webhooks:
+    get:
+      tags:
+      - webhooks
+      summary: Webhooks associated with a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: A list of webhooks.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - webhooks
+                properties:
+                  webhooks:
+                    type: object
+                    $ref: '#/components/schemas/Webhooks'
+    post:
+      tags:
+      - webhooks
+      summary: Create new webhooks for a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: an array of webhook settings
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - webhooks
+              properties:
+                webhooks:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                    - fields
+                    properties:
+                      fields:
+                        $ref: '#/components/schemas/WebhookPartialFields'
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - webhooks
+                properties:
+                  webhooks:
+                    type: array
+                    items:
+                      type: object
+                      $ref: '#/components/schemas/WebhookId'
+  /docs/{docId}/webhooks/{webhookId}:
+    patch:
+      tags:
+      - webhooks
+      summary: Modify a webhook
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: path
+        name: webhookId
+        schema:
+          type: string
+        required: true
+      requestBody:
+        description: the changes to make
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookPartialFields'
+      responses:
+        200:
+          description: Success.
+    delete:
+      tags:
+      - webhooks
+      summary: Remove a webhook
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: path
+        name: webhookId
+        schema:
+          type: string
+        required: true
+      responses:
+        200:
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - success
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+  /docs/{docId}/webhooks/queue:
+    delete:
+      tags:
+      - webhooks
+      summary: Empty a document's queue of undelivered payloads
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      responses:
+        200:
+          description: Success.
+  /docs/{docId}/sql:
+    get:
+      tags:
+      - sql
+      summary: Run an SQL query against a document
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      - in: query
+        name: q
+        schema:
+          type: string
+          description: The SQL query to run. This GET endpoint is a simplified version of the corresponding POST endpoint,
+            without support for parameters or options. See the POST endpoint for details of what's allowed in the SQL query
+            string.
+      responses:
+        200:
+          description: The result set for the query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlResultSet'
+    post:
+      tags:
+      - sql
+      summary: Run an SQL query against a document, with options or parameters
+      parameters:
+      - $ref: '#/components/parameters/docIdPathParam'
+      requestBody:
+        description: Query options
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - sql
+              properties:
+                sql:
+                  type: string
+                  description: The SQL query to run. Must be a single SELECT statement, with no trailing semicolon. WITH clauses
+                    are permitted. All Grist documents are currently SQLite databases, and the SQL query is interpreted and
+                    run by SQLite, with various defensive measures. Statements that would modify the database are not supported.
+                  example: select * from Pets where popularity >= ?
+                args:
+                  type: array
+                  items:
+                    oneOf:
+                    - type: number
+                    - type: string
+                  description: Parameters for the query.
+                  example:
+                  - 50
+                timeout:
+                  type: number
+                  description: Timeout after which operations on the document will be interrupted. Specified in milliseconds.
+                    Defaults to 1000 (1 second). This default is controlled by an optional environment variable read by the
+                    Grist app, GRIST_SQL_TIMEOUT_MSEC. The default cannot be exceeded, only reduced.
+                  example: 500
+      responses:
+        200:
+          description: The result set for the query.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlResultSet'
+  /users/{userId}:
+    delete:
+      tags:
+      - users
+      summary: Delete a user from Grist
+      description: 'This action also deletes the user''s personal organisation and all the workspaces and documents it contains.
+
+        Currently, only the users themselves are allowed to delete their own accounts.
+
+
+        ⚠️ **This action cannot be undone, please be cautious when using this endpoint** ⚠️
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/userIdPathParam'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+                  description: The user's name to delete (for confirmation, to avoid deleting the wrong account).
+                  example: John Doe
+      responses:
+        200:
+          description: The account has been deleted successfully
+        400:
+          description: The passed user name does not match the one retrieved from the database given the passed user id
+        403:
+          description: The caller is not allowed to delete this account
+        404:
+          description: The user is not found
+  /orgs/{orgId}/{name}:
+    parameters:
+    - $ref: '#/components/parameters/orgIdPathParam'
+    - name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Organization name/domain or 'force-delete' to confirm deletion
+    delete:
+      tags:
+      - Organizations
+      summary: Delete organization (with confirmation)
+      description: Delete organization - name must match org name, domain, or be 'force-delete'
+      operationId: deleteOrgConfirmed
+      responses:
+        '200':
+          description: Organization deleted
+  /orgs/{orgId}/usage:
+    parameters:
+    - $ref: '#/components/parameters/orgIdPathParam'
+    get:
+      tags:
+      - Organizations
+      summary: Get organization usage
+      description: Get usage summary for all documents in the organization (owners only)
+      operationId: getOrgUsage
+      responses:
+        '200':
+          description: Usage summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrgUsageSummary'
+  /workspaces/{workspaceId}/remove:
+    parameters:
+    - $ref: '#/components/parameters/workspaceIdPathParam'
+    post:
+      tags:
+      - Workspaces
+      summary: Remove workspace
+      description: Soft-delete workspace (can be restored) or permanently delete if permanent=1
+      operationId: removeWorkspace
+      parameters:
+      - name: permanent
+        in: query
+        schema:
+          type: string
+          enum:
+          - '1'
+          - 'true'
+      responses:
+        '200':
+          description: Workspace removed
+  /workspaces/{workspaceId}/unremove:
+    parameters:
+    - $ref: '#/components/parameters/workspaceIdPathParam'
+    post:
+      tags:
+      - Workspaces
+      summary: Restore workspace
+      description: Recover a soft-deleted workspace
+      operationId: unremoveWorkspace
+      responses:
+        '200':
+          description: Workspace restored
+  /docs:
+    post:
+      tags:
+      - Documents
+      summary: Create or import document
+      description: 'Create a new document (saved or unsaved). Can:
+
+        - Upload a file to import
+
+        - Copy from an existing document (sourceDocumentId)
+
+        - Create an empty document
+
+        '
+      operationId: createOrImportDoc
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspaceId:
+                  type: integer
+                  description: If provided, document is saved to this workspace
+                documentName:
+                  type: string
+                sourceDocumentId:
+                  type: string
+                  description: Copy from this document
+                asTemplate:
+                  type: boolean
+                  description: Copy structure only, not data
+                timezone:
+                  type: string
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                upload:
+                  type: string
+                  format: binary
+                workspaceId:
+                  type: integer
+                documentName:
+                  type: string
+      responses:
+        '200':
+          description: Created document ID
+          content:
+            application/json:
+              schema:
+                type: string
+  /docs/{docId}/remove:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Remove document
+      description: Soft-delete document or permanently delete if permanent=1
+      operationId: removeDocument
+      parameters:
+      - name: permanent
+        in: query
+        schema:
+          type: string
+          enum:
+          - '1'
+          - 'true'
+      responses:
+        '200':
+          description: Document removed
+  /docs/{docId}/unremove:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Restore document
+      description: Recover a soft-deleted document
+      operationId: unremoveDocument
+      responses:
+        '200':
+          description: Document restored
+  /docs/{docId}/pin:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    patch:
+      tags:
+      - Documents
+      summary: Pin document
+      description: Pin document to appear at top of lists
+      operationId: pinDocument
+      responses:
+        '200':
+          description: Document pinned
+  /docs/{docId}/unpin:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    patch:
+      tags:
+      - Documents
+      summary: Unpin document
+      description: Unpin document
+      operationId: unpinDocument
+      responses:
+        '200':
+          description: Document unpinned
+  /docs/{docId}/fork:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Fork document
+      description: Create a fork (editable copy) of the document
+      operationId: forkDocument
+      responses:
+        '200':
+          description: Fork result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForkResult'
+  /docs/{docId}/apply:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Apply user actions
+      description: Apply user actions to modify the document
+      operationId: applyUserActions
+      parameters:
+      - name: noparse
+        in: query
+        schema:
+          type: boolean
+        description: Don't parse string values
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/UserAction'
+      responses:
+        '200':
+          description: Action result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyUAResult'
+  /docs/{docId}/replace:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Replace document
+      description: Replace document content from another document or snapshot
+      operationId: replaceDocument
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocReplacementOptions'
+      responses:
+        '200':
+          description: Document replaced
+  /docs/{docId}/flush:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Flush document
+      description: Force save all pending changes to storage
+      operationId: flushDocument
+      responses:
+        '200':
+          description: Flush result
+          content:
+            application/json:
+              schema:
+                type: boolean
+                description: True if document was flushed, false if not loaded
+  /docs/{docId}/assign:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Reassign document worker
+      description: Administrative endpoint to reassign document to different worker
+      operationId: assignDocument
+      parameters:
+      - name: group
+        in: query
+        schema:
+          type: string
+        description: Update document's worker group
+      responses:
+        '200':
+          description: Reassignment result
+          content:
+            application/json:
+              schema:
+                type: boolean
+                description: True if reassigned, false if already correct
+  /docs/{docId}/tables/{tableId}/records/delete:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - $ref: '#/components/parameters/tableIdPathParam'
+    post:
+      tags:
+      - Records
+      summary: Delete records
+      description: Delete records by ID
+      operationId: deleteRecords
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: integer
+              description: Array of record IDs to delete
+      responses:
+        '200':
+          description: Records deleted
+  /docs/{docId}/webhooks/queue/{webhookId}:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - name: webhookId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Webhook ID
+    delete:
+      tags:
+      - Webhooks
+      summary: Clear webhook queue
+      description: Clear outgoing webhooks in queue for a specific webhook (owners only)
+      operationId: clearWebhookQueue
+      responses:
+        '200':
+          description: Queue cleared
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+  /docs/{docId}/tables/{tableId}/_subscribe:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - $ref: '#/components/parameters/tableIdPathParam'
+    post:
+      deprecated: true
+      tags:
+      - Webhooks
+      summary: Subscribe webhook (deprecated)
+      description: Create a webhook subscription (deprecated - use POST /webhooks instead)
+      operationId: subscribeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookFields'
+      responses:
+        '200':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unsubscribeKey:
+                    type: string
+                  triggerId:
+                    type: integer
+                  webhookId:
+                    type: string
+  /docs/{docId}/tables/{tableId}/_unsubscribe:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - $ref: '#/components/parameters/tableIdPathParam'
+    post:
+      deprecated: true
+      tags:
+      - Webhooks
+      summary: Unsubscribe webhook (deprecated)
+      description: Delete a webhook subscription (deprecated - use DELETE /webhooks/{id} instead)
+      operationId: unsubscribeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - webhookId
+              properties:
+                webhookId:
+                  type: string
+                unsubscribeKey:
+                  type: string
+                  description: Required for non-owners
+      responses:
+        '200':
+          description: Webhook deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+  /docs/{docId}/download/tsv:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Export
+      summary: Export to TSV
+      description: Export table to TSV (tab-separated values) format
+      operationId: exportTsv
+      parameters:
+      - $ref: '#/components/parameters/ExportTableId'
+      - $ref: '#/components/parameters/ExportViewSection'
+      - $ref: '#/components/parameters/ExportSortSpec'
+      - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: TSV file
+          content:
+            text/tab-separated-values:
+              schema:
+                type: string
+  /docs/{docId}/download/dsv:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Export
+      summary: Export to DSV
+      description: Export table to DSV (delimiter-separated values) format with custom delimiter
+      operationId: exportDsv
+      parameters:
+      - $ref: '#/components/parameters/ExportTableId'
+      - $ref: '#/components/parameters/ExportViewSection'
+      - $ref: '#/components/parameters/ExportSortSpec'
+      - $ref: '#/components/parameters/ExportFilters'
+      responses:
+        '200':
+          description: DSV file
+          content:
+            text/plain:
+              schema:
+                type: string
+  /docs/{docId}/send-to-drive:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Export
+      summary: Export to Google Drive
+      description: Export document to Google Drive as a spreadsheet
+      operationId: exportToGoogleDrive
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Google OAuth authorization code
+      - name: title
+        in: query
+        required: true
+        schema:
+          type: string
+        description: Spreadsheet title
+      responses:
+        '200':
+          description: Export result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    description: URL of created Google Sheet
+  /docs/{docId}/snapshots:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Snapshots
+      summary: List snapshots
+      description: Get list of document version snapshots
+      operationId: listSnapshots
+      parameters:
+      - name: raw
+        in: query
+        schema:
+          type: boolean
+        description: Skip caching, get raw list
+      responses:
+        '200':
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocSnapshot'
+  /docs/{docId}/snapshots/remove:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Snapshots
+      summary: Remove snapshots
+      description: Remove selected snapshots or all but current (owners only)
+      operationId: removeSnapshots
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+                required:
+                - snapshotIds
+                properties:
+                  snapshotIds:
+                    type: array
+                    items:
+                      type: string
+                    description: Specific snapshot IDs to remove
+              - type: object
+                required:
+                - select
+                properties:
+                  select:
+                    type: string
+                    enum:
+                    - unlisted
+                    - past
+                    description: Remove unlisted or past snapshots
+      responses:
+        '200':
+          description: Removed snapshot IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshotIds:
+                    type: array
+                    items:
+                      type: string
+  /docs/{docId}/states:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Snapshots
+      summary: Get document states
+      description: Get list of recent document states/versions
+      operationId: getDocumentStates
+      responses:
+        '200':
+          description: Document states
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStates'
+  /docs/{docId}/compare:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Snapshots
+      summary: Compare versions
+      description: Compare two versions of this document
+      operationId: compareVersions
+      parameters:
+      - name: left
+        in: query
+        schema:
+          type: string
+          default: HEAD
+        description: Left version hash
+      - name: right
+        in: query
+        schema:
+          type: string
+          default: HEAD
+        description: Right version hash
+      - name: maxRows
+        in: query
+        schema:
+          type: integer
+        description: Maximum rows to include in details
+      responses:
+        '200':
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+  /docs/{docId}/compare/{docId2}:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - name: docId2
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Second document to compare
+    get:
+      tags:
+      - Snapshots
+      summary: Compare documents
+      description: Compare this document with another document
+      operationId: compareDocuments
+      parameters:
+      - name: detail
+        in: query
+        schema:
+          type: boolean
+        description: Include detailed changes
+      - name: maxRows
+        in: query
+        schema:
+          type: integer
+        description: Maximum rows to include in details
+      responses:
+        '200':
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+  /docs/{docId}/propose:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Create proposal
+      description: Make the fork's content a proposal to the trunk document
+      operationId: createProposal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                retracted:
+                  type: boolean
+                  description: Mark proposal as retracted
+      responses:
+        '200':
+          description: Proposal created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocStateComparison'
+  /docs/{docId}/proposals:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Documents
+      summary: List proposals
+      description: List proposals for this document
+      operationId: listProposals
+      parameters:
+      - name: outgoing
+        in: query
+        schema:
+          type: boolean
+        description: List outgoing proposals (where this doc is source)
+      responses:
+        '200':
+          description: List of proposals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Proposal'
+  /docs/{docId}/proposals/{proposalId}/apply:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - name: proposalId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Proposal ID
+    post:
+      tags:
+      - Documents
+      summary: Apply proposal
+      description: Apply a proposal to the document
+      operationId: applyProposal
+      responses:
+        '200':
+          description: Proposal applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposalId:
+                    type: integer
+                  changes:
+                    type: object
+  /profile/user:
+    get:
+      tags:
+      - Users
+      summary: Get user profile
+      description: Get current user's profile information
+      operationId: getUserProfile
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FullUser'
+  /profile/user/name:
+    post:
+      tags:
+      - Users
+      summary: Update user name
+      description: Update current user's display name
+      operationId: updateUserName
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Name updated
+  /profile/user/locale:
+    post:
+      tags:
+      - Users
+      summary: Update user locale
+      description: Update current user's locale preference
+      operationId: updateUserLocale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale:
+                  type: string
+                  nullable: true
+      responses:
+        '200':
+          description: Locale updated
+  /profile/allowGoogleLogin:
+    post:
+      tags:
+      - Users
+      summary: Update Google login setting
+      description: Enable/disable Google login for email+password users
+      operationId: updateAllowGoogleLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - allowGoogleLogin
+              properties:
+                allowGoogleLogin:
+                  type: boolean
+      responses:
+        '200':
+          description: Setting updated
+  /profile/isConsultant:
+    post:
+      tags:
+      - Users
+      summary: Update consultant status
+      description: Enable/disable consultant status (support user only)
+      operationId: updateIsConsultant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - userId
+              - isConsultant
+              properties:
+                userId:
+                  type: integer
+                isConsultant:
+                  type: boolean
+      responses:
+        '200':
+          description: Status updated
+  /profile/key:
+    get:
+      tags:
+      - Users
+      summary: Get API key
+      description: Get current user's API key
+      operationId: getUserApiKey
+      responses:
+        '200':
+          description: API key
+          content:
+            text/plain:
+              schema:
+                type: string
+    post:
+      tags:
+      - Users
+      summary: Create API key
+      description: Create or regenerate user's API key
+      operationId: createUserApiKey
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force:
+                  type: boolean
+                  description: Force regenerate even if key exists
+      responses:
+        '200':
+          description: API key
+          content:
+            text/plain:
+              schema:
+                type: string
+    delete:
+      tags:
+      - Users
+      summary: Delete API key
+      description: Delete user's API key
+      operationId: deleteUserApiKey
+      responses:
+        '200':
+          description: API key deleted
+  /users/{userId}/disable:
+    parameters:
+    - name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: User ID
+    post:
+      tags:
+      - Users
+      summary: Disable user
+      description: Disable a user account (install admin only)
+      operationId: disableUser
+      responses:
+        '200':
+          description: User disabled
+  /users/{userId}/enable:
+    parameters:
+    - name: userId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: User ID
+    post:
+      tags:
+      - Users
+      summary: Enable user
+      description: Enable a disabled user account (install admin only)
+      operationId: enableUser
+      responses:
+        '200':
+          description: User enabled
+  /session/access/active:
+    get:
+      tags:
+      - Sessions
+      summary: Get active session
+      description: Get active user and organization
+      operationId: getActiveSession
+      responses:
+        '200':
+          description: Active session info
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActiveSessionInfo'
+    post:
+      tags:
+      - Sessions
+      summary: Set active session
+      description: Set active user profile for current organization
+      operationId: setActiveSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                org:
+                  type: string
+                  description: Organization domain or 'current'
+      responses:
+        '200':
+          description: Session updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  email:
+                    type: string
+  /session/access/all:
+    get:
+      tags:
+      - Sessions
+      summary: Get all session profiles
+      description: Get all user profiles and orgs accessible in this session
+      operationId: getAllSessions
+      responses:
+        '200':
+          description: All accessible profiles and orgs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FullUser'
+                  orgs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Organization'
+  /service-accounts:
+    get:
+      tags:
+      - Service Accounts
+      summary: List service accounts
+      description: Get all service accounts owned by current user
+      operationId: listServiceAccounts
+      responses:
+        '200':
+          description: List of service accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ServiceAccountResponse'
+    post:
+      tags:
+      - Service Accounts
+      summary: Create service account
+      description: Create a new service account
+      operationId: createServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - label
+              - expiresAt
+              properties:
+                label:
+                  type: string
+                description:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Created service account
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountCreationResponse'
+  /service-accounts/{serviceAccountId}:
+    parameters:
+    - name: serviceAccountId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Service account ID
+    get:
+      tags:
+      - Service Accounts
+      summary: Get service account
+      description: Get a specific service account
+      operationId: getServiceAccount
+      responses:
+        '200':
+          description: Service account details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountResponse'
+    patch:
+      tags:
+      - Service Accounts
+      summary: Update service account
+      description: Update service account properties
+      operationId: updateServiceAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                description:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Service account updated
+    delete:
+      tags:
+      - Service Accounts
+      summary: Delete service account
+      description: Delete a service account
+      operationId: deleteServiceAccount
+      responses:
+        '200':
+          description: Service account deleted
+  /service-accounts/{serviceAccountId}/key:
+    parameters:
+    - name: serviceAccountId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Service account ID
+    post:
+      tags:
+      - Service Accounts
+      summary: Regenerate API key
+      description: Regenerate the API key for a service account
+      operationId: regenerateServiceAccountKey
+      responses:
+        '200':
+          description: New API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceAccountCreationResponse'
+    delete:
+      tags:
+      - Service Accounts
+      summary: Delete API key
+      description: Delete the API key for a service account
+      operationId: deleteServiceAccountKey
+      responses:
+        '200':
+          description: API key deleted
+  /templates:
+    get:
+      tags:
+      - Templates
+      summary: List templates
+      description: Get all available templates
+      operationId: listTemplates
+      responses:
+        '200':
+          description: List of template workspaces
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workspace'
+  /templates/{did}:
+    parameters:
+    - name: did
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Template document ID
+    get:
+      tags:
+      - Templates
+      summary: Get template
+      description: Get information about a template document
+      operationId: getTemplate
+      responses:
+        '200':
+          description: Template document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+  /widgets:
+    get:
+      tags:
+      - Documents
+      summary: List custom widgets
+      description: Get list of available custom widgets
+      operationId: listWidgets
+      responses:
+        '200':
+          description: List of widgets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /docs/{docId}/forms/{formId}:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    - name: formId
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: View section ID
+    get:
+      tags:
+      - Documents
+      summary: Get form data
+      description: Get form configuration and schema for a view section
+      operationId: getFormData
+      responses:
+        '200':
+          description: Form data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  formFieldsById:
+                    type: object
+                  formLayoutSpec:
+                    type: string
+                  formTableId:
+                    type: string
+                  formTitle:
+                    type: string
+  /docs/{docId}/timing:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    get:
+      tags:
+      - Documents
+      summary: Get timing status
+      description: Check if formula timing is enabled (owners only)
+      operationId: getTimingStatus
+      responses:
+        '200':
+          description: Timing status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum:
+                    - disabled
+                    - active
+                    - pending
+                  timing:
+                    type: object
+  /docs/{docId}/timing/start:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Start timing
+      description: Start recording formula timing information (owners only)
+      operationId: startTiming
+      responses:
+        '200':
+          description: Timing started
+  /docs/{docId}/timing/stop:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Stop timing
+      description: Stop recording formula timing and get results (owners only)
+      operationId: stopTiming
+      responses:
+        '200':
+          description: Timing results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /docs/{docId}/assistant:
+    parameters:
+    - $ref: '#/components/parameters/docIdPathParam'
+    post:
+      tags:
+      - Documents
+      summary: Get AI assistance
+      description: Get AI assistant completions (requires OpenAI API key)
+      operationId: getAssistance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  limit:
+                    type: object
+                    properties:
+                      usage:
+                        type: number
+                      limit:
+                        type: number
+  /admin:
+    get:
+      tags:
+      - Admin
+      summary: Admin panel
+      description: Admin panel landing page
+      operationId: getAdminPanel
+      responses:
+        '200':
+          description: Admin panel HTML
+  /admin/restart:
+    post:
+      tags:
+      - Admin
+      summary: Restart server
+      description: Restart the Grist server (requires supervisor)
+      operationId: restartServer
+      responses:
+        '200':
+          description: Restart initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg:
+                    type: string
+        '409':
+          description: Cannot restart automatically
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+  /install/prefs:
+    get:
+      tags:
+      - Admin
+      summary: Get install preferences
+      description: Get installation-level preferences (install admin only)
+      operationId: getInstallPrefs
+      responses:
+        '200':
+          description: Install preferences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  telemetry:
+                    type: object
+                  checkForLatestVersion:
+                    type: boolean
+    patch:
+      tags:
+      - Admin
+      summary: Update install preferences
+      description: Update installation-level preferences (install admin only)
+      operationId: updateInstallPrefs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                telemetry:
+                  type: object
+                checkForLatestVersion:
+                  type: boolean
+      responses:
+        '200':
+          description: Preferences updated
+  /install/updates:
+    get:
+      tags:
+      - Admin
+      summary: Check for updates
+      description: Check for latest Grist version (install admin only)
+      operationId: checkUpdates
+      responses:
+        '200':
+          description: Update information
+          content:
+            application/json:
+              schema:
+                type: object
+  /install/configs/{key}:
+    parameters:
+    - name: key
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Config key
+    get:
+      tags:
+      - Admin
+      summary: Get install config
+      description: Get installation-level configuration (install admin only)
+      operationId: getInstallConfig
+      responses:
+        '200':
+          description: Config value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    put:
+      tags:
+      - Admin
+      summary: Set install config
+      description: Set installation-level configuration (install admin only)
+      operationId: setInstallConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    delete:
+      tags:
+      - Admin
+      summary: Delete install config
+      description: Delete installation-level configuration (install admin only)
+      operationId: deleteInstallConfig
+      responses:
+        '200':
+          description: Config deleted
+  /orgs/{orgId}/configs/{key}:
+    parameters:
+    - $ref: '#/components/parameters/orgIdPathParam'
+    - name: key
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Config key
+    get:
+      tags:
+      - Admin
+      summary: Get org config
+      description: Get organization-level configuration (install admin only)
+      operationId: getOrgConfig
+      responses:
+        '200':
+          description: Config value
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    put:
+      tags:
+      - Admin
+      summary: Set org config
+      description: Set organization-level configuration (install admin only)
+      operationId: setOrgConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Config updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConfigResponse'
+    delete:
+      tags:
+      - Admin
+      summary: Delete org config
+      description: Delete organization-level configuration (install admin only)
+      operationId: deleteOrgConfig
+      responses:
+        '200':
+          description: Config deleted
+tags:
+- name: orgs
+  description: Team sites and personal spaces are called 'orgs' in the API.
+- name: workspaces
+  description: Sites can be organized into groups of documents called workspaces.
+- name: docs
+  description: Workspaces contain collections of Grist documents.
+- name: records
+  description: Tables contain collections of records (also called rows).
+- name: tables
+  description: Documents are structured as a collection of tables.
+- name: columns
+  description: Tables are structured as a collection of columns.
+- name: data
+  description: Work with table data, using a (now deprecated) columnar format. We now recommend the `records` endpoints.
+- name: attachments
+  description: Documents may include attached files. Data records can refer to these using a column of type `Attachments`.
+- name: webhooks
+  description: Document changes can trigger requests to URLs called webhooks.
+- name: sql
+  description: Sql endpoint to query data from documents.
+- name: users
+  description: Grist users.
+- name: admin
+  description: Installation administration endpoints
+- name: profile
+  description: User profile management
+- name: sessions
+  description: Session management
+- name: service-accounts
+  description: Service account management for API access
+- name: templates
+  description: Template documents
+- name: snapshots
+  description: Document version snapshots
+- name: proposals
+  description: Document change proposals
+- name: forms
+  description: Grist forms
+- name: timing
+  description: Document timing and performance
+- name: ai
+  description: AI assistant features
+components:
+  securitySchemes:
+    ApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: 'Authorization: Bearer XXXXXXXXXXX'
+      description: Access to the Grist API is controlled by an Authorization header, which should contain the word 'Bearer',
+        followed by a space, followed by your API key.
+  schemas:
+    Org:
+      type: object
+      required:
+      - id
+      - name
+      - domain
+      - owner
+      - createdAt
+      - updatedAt
+      - access
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 42
+        name:
+          type: string
+          example: Grist Labs
+        domain:
+          type: string
+          nullable: true
+          example: gristlabs
+        owner:
+          type: object
+          $ref: '#/components/schemas/User'
+          nullable: true
+        access:
+          type: string
+          $ref: '#/components/schemas/Access'
+        createdAt:
+          type: string
+          example: '2019-09-13T15:42:35.000Z'
+        updatedAt:
+          type: string
+          example: '2019-09-13T15:42:35.000Z'
+    Orgs:
+      type: array
+      items:
+        $ref: '#/components/schemas/Org'
+    Webhooks:
+      type: array
+      items:
+        $ref: '#/components/schemas/Webhook'
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: xxxxxxx-xxxx-xxxx-xxxxxxxxxxxxxxxx
+        fields:
+          $ref: '#/components/schemas/WebhookFields'
+        usage:
+          $ref: '#/components/schemas/WebhookUsage'
+    WebhookFields:
+      allOf:
+      - $ref: '#/components/schemas/WebhookPartialFields'
+      - $ref: '#/components/schemas/WebhookRequiredFields'
+    WebhookRequiredFields:
+      type: object
+      required:
+      - name
+      - memo
+      - url
+      - enabled
+      - unsubscribeKey
+      - eventTypes
+      - isReadyColumn
+      - tableId
+      properties:
+        unsubscribeKey:
+          type: string
+    WebhookPartialFields:
+      type: object
+      properties:
+        name:
+          type: string
+          example: new-project-email
+          nullable: true
+        memo:
+          type: string
+          example: Send an email when a project is added
+          nullable: true
+        url:
+          type: string
+          format: uri
+          example: https://example.com/webhook/123
+        enabled:
+          type: boolean
+        eventTypes:
+          type: array
+          items:
+            type: string
+          example:
+          - add
+          - update
+        isReadyColumn:
+          type: string
+          nullable: true
+          example: null
+        tableId:
+          type: string
+          example: Projects
+    WebhookUsage:
+      type: object
+      nullable: true
+      required:
+      - numWaiting
+      - status
+      properties:
+        numWaiting:
+          type: integer
+        status:
+          type: string
+          example: idle
+        updatedTime:
+          type: number
+          nullable: true
+          format: UNIX epoch in milliseconds
+          example: 1685637500424
+        lastSuccessTime:
+          type: number
+          nullable: true
+          format: UNIX epoch in milliseconds
+          example: 1685637500424
+        lastFailureTime:
+          type: number
+          nullable: true
+          format: UNIX epoch in milliseconds
+          example: 1685637500424
+        lastErrorMessage:
+          type: string
+          nullable: true
+          example: null
+        lastHttpStatus:
+          type: number
+          nullable: true
+          example: 200
+        lastEventBatch:
+          $ref: '#/components/schemas/WebhookBatchStatus'
+    WebhookBatchStatus:
+      type: object
+      nullable: true
+      required:
+      - size
+      - attempts
+      - status
+      properties:
+        size:
+          type: number
+          example: 1
+        attempts:
+          type: number
+          example: 1
+        errorMessage:
+          type: string
+          nullable: true
+          example: null
+        httpStatus:
+          type: number
+          example: 200
+        status:
+          type: string
+          example: success
+    WebhookId:
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: string
+          description: Webhook identifier
+          example: xxxxxxx-xxxx-xxxx-xxxxxxxxxxxxxxxx
+    WebhookRequiredProperties:
+      type: object
+      required:
+      - size
+      properties:
+        size:
+          type: number
+          example: 1
+    WebhookProperties:
+      size:
+        type: number
+        example: 1
+      attempts:
+        type: number
+        example: 1
+      errorMessage:
+        type: string
+        nullable: true
+        example: null
+      httpStatus:
+        type: number
+        example: 200
+      status:
+        type: string
+        example: success
+    Workspace:
+      type: object
+      required:
+      - id
+      - name
+      - access
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 97
+        name:
+          type: string
+          example: Secret Plans
+        access:
+          type: string
+          $ref: '#/components/schemas/Access'
+    Doc:
+      type: object
+      required:
+      - id
+      - name
+      - isPinned
+      - urlId
+      - access
+      properties:
+        id:
+          type: string
+          example: 145
+        name:
+          type: string
+          example: Project Lollipop
+        access:
+          type: string
+          $ref: '#/components/schemas/Access'
+        isPinned:
+          type: boolean
+          example: true
+        urlId:
+          type: string
+          nullable: true
+          example: null
+    WorkspaceWithDocs:
+      allOf:
+      - $ref: '#/components/schemas/Workspace'
+      - type: object
+        required:
+        - docs
+        properties:
+          docs:
+            type: array
+            items:
+              $ref: '#/components/schemas/Doc'
+    WorkspaceWithDocsAndDomain:
+      allOf:
+      - $ref: '#/components/schemas/WorkspaceWithDocs'
+      - type: object
+        properties:
+          orgDomain:
+            type: string
+            example: gristlabs
+    WorkspaceWithOrg:
+      allOf:
+      - $ref: '#/components/schemas/Workspace'
+      - type: object
+        required:
+        - org
+        properties:
+          org:
+            $ref: '#/components/schemas/Org'
+    WorkspaceWithDocsAndOrg:
+      allOf:
+      - $ref: '#/components/schemas/WorkspaceWithDocs'
+      - $ref: '#/components/schemas/WorkspaceWithOrg'
+    DocWithWorkspace:
+      allOf:
+      - $ref: '#/components/schemas/Doc'
+      - type: object
+        required:
+        - workspace
+        properties:
+          workspace:
+            $ref: '#/components/schemas/WorkspaceWithOrg'
+    User:
+      type: object
+      required:
+      - id
+      - name
+      - picture
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 101
+        name:
+          type: string
+          example: Helga Hufflepuff
+        picture:
+          type: string
+          nullable: true
+          example: null
+    Access:
+      type: string
+      enum:
+      - owners
+      - editors
+      - viewers
+    Data:
+      type: object
+      required:
+      - id
+      properties:
+        id:
+          type: array
+          items:
+            type: integer
+      additionalProperties:
+        type: array
+        items:
+          type: object
+      example:
+        id:
+        - 1
+        - 2
+        pet:
+        - cat
+        - dog
+        popularity:
+        - 67
+        - 95
+    DataWithoutId:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: object
+      example:
+        pet:
+        - cat
+        - dog
+        popularity:
+        - 67
+        - 95
+    RecordsList:
+      type: object
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - fields
+            properties:
+              id:
+                type: number
+                example: 1
+              fields:
+                type: object
+                description: A JSON object mapping column names to [cell values](https://support.getgrist.com/code/modules/GristData/#cellvalue).
+      example:
+        records:
+        - id: 1
+          fields:
+            pet: cat
+            popularity: 67
+        - id: 2
+          fields:
+            pet: dog
+            popularity: 95
+    RecordsWithoutId:
+      type: object
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - fields
+            properties:
+              fields:
+                type: object
+                description: A JSON object mapping column names to [cell values](https://support.getgrist.com/code/modules/GristData/#cellvalue).
+      example:
+        records:
+        - fields:
+            pet: cat
+            popularity: 67
+        - fields:
+            pet: dog
+            popularity: 95
+    RecordsWithoutFields:
+      type: object
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            properties:
+              id:
+                type: number
+                example: 1
+      example:
+        records:
+        - id: 1
+        - id: 2
+    RecordsWithRequire:
+      type: object
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - require
+            properties:
+              require:
+                type: object
+                description: 'keys are column identifiers, and values are [cell values](https://support.getgrist.com/code/modules/GristData/#cellvalue)
+                  we want to have in those columns (either by matching with an existing record, or creating a new record)
+
+                  '
+              fields:
+                type: object
+                description: 'keys are column identifiers, and values are [cell values](https://support.getgrist.com/code/modules/GristData/#cellvalue)
+                  to place in those columns (either overwriting values in an existing record, or in a new record)
+
+                  '
+      example:
+        records:
+        - require:
+            pet: cat
+          fields:
+            popularity: 67
+        - require:
+            pet: dog
+          fields:
+            popularity: 95
+    TablesList:
+      type: object
+      required:
+      - tables
+      properties:
+        tables:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - fields
+            properties:
+              id:
+                type: string
+                example: Table1
+              fields:
+                type: object
+      example:
+        tables:
+        - id: People
+          fields:
+            tableRef: 1
+            onDemand: true
+        - id: Places
+          fields:
+            tableRef: 2
+            onDemand: false
+    TablesWithoutFields:
+      type: object
+      required:
+      - tables
+      properties:
+        tables:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            properties:
+              id:
+                type: string
+                example: Table1
+      example:
+        tables:
+        - id: People
+        - id: Places
+    CreateTables:
+      type: object
+      required:
+      - tables
+      properties:
+        tables:
+          type: array
+          items:
+            type: object
+            required:
+            - columns
+            properties:
+              id:
+                type: string
+                example: Table1
+              columns:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      example: ColumnName
+                    fields:
+                      type: object
+      example:
+        tables:
+        - id: People
+          columns:
+          - id: pet
+            fields:
+              label: Pet
+          - id: popularity
+            fields:
+              label: Popularity ❤
+    ColumnsList:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                example: ColumnName
+              fields:
+                $ref: '#/components/schemas/GetFields'
+      example:
+        columns:
+        - id: pet
+          fields:
+            label: Pet
+        - id: popularity
+          fields:
+            label: Popularity ❤
+            type: Int
+    CreateColumns:
+      type: object
+      required:
+      - columns
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                description: Column identifier
+              fields:
+                $ref: '#/components/schemas/CreateFields'
+      example:
+        columns:
+        - id: pet
+          fields:
+            label: Pet
+        - id: popularity
+          fields:
+            label: Popularity ❤
+            type: Int
+        - id: Order
+          fields:
+            type: Ref:Orders
+            visibleCol: 2
+        - id: Formula
+          fields:
+            type: Int
+            formula: $A + $B
+            isFormula: true
+        - id: Status
+          fields:
+            type: Choice
+            widgetOptions: '{"choices":["New","Old"],"choiceOptions":{"New":{"fillColor":"#FF0000","textColor":"#FFFFFF"}}}'
+    UpdateColumns:
+      type: object
+      required:
+      - columns
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - fields
+            properties:
+              id:
+                type: string
+                description: Column identifier
+              fields:
+                allOf:
+                - $ref: '#/components/schemas/CreateFields'
+                - type: object
+                  properties:
+                    colId:
+                      type: string
+                      description: Set it to the new column ID when you want to change it.
+      example:
+        columns:
+        - id: pet
+          fields:
+            label: Pet
+        - id: popularity
+          fields:
+            label: Popularity ❤
+            type: Int
+    ColumnsWithoutFields:
+      type: object
+      required:
+      - columns
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            properties:
+              id:
+                type: string
+                example: ColumnName
+      example:
+        columns:
+        - id: pet
+        - id: popularity
+    Fields:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Column type, by default Any. Ref, RefList and DateTime types requires a postfix, e.g. <code>DateTime:America/New_York</code>,
+            <code>Ref:Users</code>
+          enum:
+          - Any
+          - Text
+          - Numeric
+          - Int
+          - Bool
+          - Date
+          - DateTime:<timezone>
+          - Choice
+          - ChoiceList
+          - Ref:<tableId>
+          - RefList:<tableId>
+          - Attachments
+        label:
+          type: string
+          description: Column label.
+        formula:
+          type: string
+          description: 'A python formula, e.g.: <code>$A + Table1.lookupOne(B=$B)</code>'
+        isFormula:
+          type: boolean
+          description: Use "true" to indicate that the column is a formula column. Use "false" for trigger formula column.
+        widgetOptions:
+          type: string
+          description: 'A JSON object with widget options, e.g.: <code>{"choices": ["cat", "dog"], "alignment": "right"}</code>'
+        untieColIdFromLabel:
+          type: boolean
+          description: Use "true" to indicate that the column label should not be used as the column identifier. Use "false"
+            to use the label as the identifier.
+        recalcWhen:
+          type: integer
+          description: A number indicating when the column should be recalculated. <ol start='0'><li>On new records or when
+            any field in recalcDeps changes, it's a 'data-cleaning'.</li><li>Never.</li><li>Calculate on new records and on
+            manual updates to any data field.</li></ol>
+        visibleCol:
+          type: integer
+          description: For Ref and RefList columns, the colRef of a column to display
+    CreateFields:
+      allOf:
+      - $ref: '#/components/schemas/Fields'
+      - type: object
+        properties:
+          recalcDeps:
+            type: string
+            description: 'An encoded array of column identifiers (colRefs) that this column depends on. If any of these columns
+              change, the column will be recalculated. E.g.: <code>[2, 3]</code>'
+    GetFields:
+      allOf:
+      - $ref: '#/components/schemas/Fields'
+      - type: object
+        properties:
+          recalcDeps:
+            type: array
+            items:
+              type: integer
+            description: 'An array of column identifiers (colRefs) that this column depends on, prefixed with "L" constant.
+              If any of these columns change, the column will be recalculated. E.g.: <code>["L", 2, 3]</code>'
+          colRef:
+            type: integer
+            description: 'Column reference, e.g.: <code>2</code>'
+    RowIds:
+      type: array
+      example:
+      - 101
+      - 102
+      - 103
+      items:
+        type: integer
+    DocParameters:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Competitive Analysis
+        isPinned:
+          type: boolean
+          example: false
+    WorkspaceParameters:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Retreat Docs
+    OrgParameters:
+      type: object
+      properties:
+        name:
+          type: string
+          example: ACME Unlimited
+    OrgAccessRead:
+      type: object
+      required:
+      - users
+      properties:
+        users:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                type: integer
+                example: 1
+              name:
+                type: string
+                example: Andrea
+              email:
+                type: string
+                example: andrea@getgrist.com
+              access:
+                $ref: '#/components/schemas/Access'
+    OrgAccessWrite:
+      type: object
+      required:
+      - users
+      properties:
+        users:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - owners
+            - editors
+            - viewers
+            - members
+            nullable: true
+          example:
+            foo@getgrist.com: owners
+            bar@getgrist.com: null
+    WorkspaceAccessRead:
+      type: object
+      required:
+      - maxInheritedRole
+      - users
+      properties:
+        maxInheritedRole:
+          $ref: '#/components/schemas/Access'
+        users:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - name
+            properties:
+              id:
+                type: integer
+                example: 1
+              name:
+                type: string
+                example: Andrea
+              email:
+                type: string
+                example: andrea@getgrist.com
+              access:
+                $ref: '#/components/schemas/Access'
+              parentAccess:
+                $ref: '#/components/schemas/Access'
+    WorkspaceAccessWrite:
+      type: object
+      properties:
+        maxInheritedRole:
+          $ref: '#/components/schemas/Access'
+        users:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+            - owners
+            - editors
+            - viewers
+            - members
+            nullable: true
+          example:
+            foo@getgrist.com: owners
+            bar@getgrist.com: null
+    DocAccessWrite:
+      $ref: '#/components/schemas/WorkspaceAccessWrite'
+    DocAccessRead:
+      $ref: '#/components/schemas/WorkspaceAccessRead'
+    AttachmentUpload:
+      type: object
+      properties:
+        upload:
+          type: array
+          items:
+            type: string
+            format: binary
+    AttachmentId:
+      type: number
+      description: An integer ID
+    AttachmentMetadata:
+      type: object
+      properties:
+        fileName:
+          type: string
+          example: logo.png
+        fileSize:
+          type: number
+          example: 12345
+        timeUploaded:
+          type: string
+          example: '2020-02-13T12:17:19.000Z'
+    AttachmentMetadataList:
+      type: object
+      required:
+      - records
+      properties:
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - id
+            - fields
+            properties:
+              id:
+                type: number
+                example: 1
+              fields:
+                $ref: '#/components/schemas/AttachmentMetadata'
+    SqlResultSet:
+      type: object
+      required:
+      - statement
+      - records
+      properties:
+        statement:
+          type: string
+          description: A copy of the SQL statement.
+          example: select * from Pets ...
+        records:
+          type: array
+          items:
+            type: object
+            required:
+            - fields
+            properties:
+              fields:
+                type: object
+          example:
+          - fields:
+              id: 1
+              pet: cat
+              popularity: 67
+          - fields:
+              id: 2
+              pet: dog
+              popularity: 95
+    TableSchemaResult:
+      type: object
+      required:
+      - name
+      - title
+      - schema
+      properties:
+        name:
+          type: string
+          description: The ID (technical name) of the table
+        title:
+          type: string
+          description: The human readable name of the table
+        path:
+          type: string
+          description: The URL to download the CSV
+          example: https://getgrist.com/o/docs/api/docs/ID/download/csv?tableId=Table1&....
+        format:
+          type: string
+          enum:
+          - csv
+        mediatype:
+          type: string
+          enum:
+          - text/csv
+        encoding:
+          type: string
+          enum:
+          - utf-8
+        dialect:
+          $ref: https://specs.frictionlessdata.io/schemas/csv-dialect.json
+        schema:
+          $ref: https://specs.frictionlessdata.io/schemas/table-schema.json
+    DocumentStoreSetting:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - external
+          - internal
+    DocumentStoreId:
+      type: string
+      nullable: true
+      example: 83395209-fc3b-4d02-8934-b2619efec712-filesystem
+    DocumentAttachmentsLocation:
+      type: string
+      description: The current location of attachment files in the document
+      enum:
+      - none
+      - internal
+      - mixed
+      - external
+      example: mixed
+    AttachmentsTransferStatus:
+      type: object
+      properties:
+        status:
+          type: object
+          properties:
+            pendingTransferCount:
+              type: integer
+              description: Remaining transfers be performed
+              example: 19
+            isRunning:
+              type: boolean
+              description: Are files actively being transferred?
+              example: true
+        locationSummary:
+          $ref: '#/components/schemas/DocumentAttachmentsLocation'
+    Document:
+      allOf:
+      - $ref: '#/components/schemas/DocumentProperties'
+      - type: object
+        required:
+        - id
+        - workspace
+        - access
+        properties:
+          id:
+            type: string
+          workspace:
+            $ref: '#/components/schemas/Workspace'
+          access:
+            type: string
+            enum:
+            - owners
+            - editors
+            - viewers
+            - members
+          trunkAccess:
+            type: string
+            enum:
+            - owners
+            - editors
+            - viewers
+            - members
+            nullable: true
+          forks:
+            type: array
+            items:
+              $ref: '#/components/schemas/Fork'
+    DocStateComparison:
+      type: object
+      properties:
+        left:
+          $ref: '#/components/schemas/DocState'
+        right:
+          $ref: '#/components/schemas/DocState'
+        parent:
+          $ref: '#/components/schemas/DocState'
+          nullable: true
+        summary:
+          type: string
+          enum:
+          - same
+          - left
+          - right
+          - both
+          - unrelated
+        details:
+          type: object
+    OrgUsageSummary:
+      type: object
+      properties:
+        usage:
+          type: object
+        limits:
+          type: object
+    ForkResult:
+      type: object
+      properties:
+        urlId:
+          type: string
+        docId:
+          type: string
+    ServiceAccountResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        login:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        hasValidKey:
+          type: boolean
+    DocSnapshot:
+      type: object
+      properties:
+        lastModified:
+          type: string
+          format: date-time
+        snapshotId:
+          type: string
+        docId:
+          type: string
+    Proposal:
+      type: object
+      properties:
+        shortId:
+          type: integer
+        comparison:
+          type: object
+        status:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+              - applied
+              - retracted
+              - dismissed
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        appliedAt:
+          type: string
+          format: date-time
+          nullable: true
+        srcDocId:
+          type: string
+        srcDoc:
+          type: object
+        destDocId:
+          type: string
+        destDoc:
+          type: object
+    ApplyUAResult:
+      type: object
+      properties:
+        actionNum:
+          type: integer
+        retValues:
+          type: array
+        isModification:
+          type: boolean
+    FullUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        picture:
+          type: string
+          nullable: true
+        ref:
+          type: string
+          nullable: true
+        locale:
+          type: string
+        loginMethod:
+          type: string
+        allowGoogleLogin:
+          type: boolean
+        helpScoutSignature:
+          type: string
+        isInstallAdmin:
+          type: boolean
+    ActiveSessionInfo:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/FullUser'
+        org:
+          $ref: '#/components/schemas/Organization'
+          nullable: true
+        orgError:
+          type: object
+          properties:
+            error:
+              type: string
+            status:
+              type: integer
+    ServiceAccountCreationResponse:
+      allOf:
+      - $ref: '#/components/schemas/ServiceAccountResponse'
+      - type: object
+        properties:
+          key:
+            type: string
+            description: API key (only returned on creation/regeneration)
+    DocStates:
+      type: object
+      properties:
+        states:
+          type: array
+          items:
+            $ref: '#/components/schemas/DocState'
+    Organization:
+      allOf:
+      - $ref: '#/components/schemas/OrganizationProperties'
+      - type: object
+        required:
+        - id
+        - access
+        properties:
+          id:
+            type: integer
+          access:
+            type: string
+            enum:
+            - owners
+            - editors
+            - viewers
+            - members
+          owner:
+            $ref: '#/components/schemas/FullUser'
+            nullable: true
+          billingAccount:
+            $ref: '#/components/schemas/BillingAccount'
+          host:
+            type: string
+            nullable: true
+    UserAction:
+      type: array
+      items: {}
+      description: User action in format [action_type, table_id, ...args]
+    ConfigResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+        key:
+          type: string
+        value:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        org:
+          type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            domain:
+              type: string
+    DocReplacementOptions:
+      type: object
+      properties:
+        sourceDocId:
+          type: string
+        snapshotId:
+          type: string
+        resetTutorialMetadata:
+          type: boolean
+  parameters:
+    filterQueryParam:
+      in: query
+      name: filter
+      schema:
+        type: string
+      description: 'This is a JSON object mapping column names to arrays of allowed values.  For example, to filter column
+        `pet` for values `cat` and `dog`, the filter would be `{"pet": ["cat", "dog"]}`. JSON contains characters that are
+        not safe to place in a URL, so it is important to url-encode them.  For this example, the url-encoding is `%7B%22pet%22%3A%20%5B%22cat%22%2C%20%22dog%22%5D%7D`.
+        See https://rosettacode.org/wiki/URL_encoding for how to url-encode a string, or https://www.urlencoder.org/ to try
+        some examples. Multiple columns can be filtered. For example the filter for `pet` being either `cat` or `dog`, AND
+        `size` being either `tiny` or `outrageously small`, would be `{"pet": ["cat", "dog"], "size": ["tiny", "outrageously
+        small"]}`.'
+      example: '{"pet": ["cat", "dog"]}'
+      required: false
+    sortQueryParam:
+      in: query
+      name: sort
+      schema:
+        type: string
+      description: 'Order in which to return results. If a single column name is given (e.g. `pet`), results are placed in
+        ascending order of values in that column. To get results in an order that was previously prepared manually in Grist,
+        use the special `manualSort` column name. Multiple columns can be specified, separated by commas (e.g. `pet,age`).
+        For descending order, prefix a column name with a `-` character (e.g. `pet,-age`). To include additional sorting options
+        append them after a colon (e.g. `pet,-age:naturalSort;emptyFirst,owner`). Available options are: `choiceOrder`, `naturalSort`,
+        `emptyFirst`. Without the `sort` parameter, the order of results is unspecified.'
+      example: pet,-age
+      required: false
+    limitQueryParam:
+      in: query
+      name: limit
+      schema:
+        type: number
+      description: Return at most this number of rows.  A value of 0 is equivalent to having no limit.
+      example: '5'
+      required: false
+    sortHeaderParam:
+      in: header
+      name: X-Sort
+      schema:
+        type: string
+      description: Same as `sort` query parameter.
+      example: pet,-age
+      required: false
+    limitHeaderParam:
+      in: header
+      name: X-Limit
+      schema:
+        type: number
+      description: Same as `limit` query parameter.
+      example: '5'
+      required: false
+    colIdPathParam:
+      in: path
+      name: colId
+      schema:
+        type: string
+      description: The column id (without the starting `$`) as shown in the column configuration below the label
+      required: true
+    tableIdPathParam:
+      in: path
+      name: tableId
+      schema:
+        type: string
+      description: normalized table name (see `TABLE ID` in Raw Data) or numeric row ID in `_grist_Tables`
+      required: true
+    docIdPathParam:
+      in: path
+      name: docId
+      schema:
+        type: string
+      description: A string id (UUID)
+      required: true
+    orgIdPathParam:
+      in: path
+      name: orgId
+      schema:
+        oneOf:
+        - type: integer
+        - type: string
+      description: This can be an integer id, or a string subdomain (e.g. `gristlabs`), or `current` if the org is implied
+        by the domain in the url
+      required: true
+    workspaceIdPathParam:
+      in: path
+      name: workspaceId
+      description: An integer id
+      schema:
+        type: integer
+      required: true
+    userIdPathParam:
+      in: path
+      name: userId
+      schema:
+        type: integer
+      description: A user id
+      required: true
+    noparseQueryParam:
+      in: query
+      name: noparse
+      schema:
+        type: boolean
+      description: Set to true to prohibit parsing strings according to the column type.
+    hiddenQueryParam:
+      in: query
+      name: hidden
+      schema:
+        type: boolean
+      description: Set to true to include the hidden columns (like "manualSort")
+    headerQueryParam:
+      in: query
+      name: header
+      schema:
+        type: string
+        enum:
+        - colId
+        - label
+      description: Format for headers. Labels tend to be more human-friendly while colIds are more normalized.
+      required: false
+    ExportViewSection:
+      name: viewSection
+      in: query
+      schema:
+        type: integer
+      description: View section ID for export options
+    ExportSortSpec:
+      name: activeSortSpec
+      in: query
+      schema:
+        type: string
+      description: Sort specification as JSON
+    ExportFilters:
+      name: filters
+      in: query
+      schema:
+        type: string
+      description: Filters as JSON
+    ExportTableId:
+      name: tableId
+      in: query
+      required: true
+      schema:
+        type: string
+      description: Table ID to export
