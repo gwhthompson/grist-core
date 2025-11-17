@@ -23,9 +23,8 @@ for possible_path in python/bin/python python/bin/python3 \
   fi
 done
 
-echo "Use Python3 if available and recent enough"
 ! [ -x "$(command -v python3)" ] && echo "Error: python3 must be installed" && exit 1
-! python3 -c 'import sys; assert sys.version_info >= (3,9)' 2> /dev/null && echo "Error: python must be >= 3.9" && exit 1
+! python3 -c 'import sys; assert sys.version_info >= (3,13)' 2> /dev/null && echo "Error: python must be >= 3.13" && exit 1
 
 # Default to python3 if recent enough.
 echo "Making Python3 sandbox"

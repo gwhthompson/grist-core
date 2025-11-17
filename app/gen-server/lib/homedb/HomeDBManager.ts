@@ -957,7 +957,7 @@ export class HomeDBManager implements HomeDBAuth {
     if (result.status === 200 && process.env.GRIST_SINGLE_ORG &&
         process.env.GRIST_SINGLE_ORG !== 'docs') {
       // Hide personal orgs for consistency when their docs are inaccessible.
-      return {status: 200, data: result.data.filter(org => org.owner === null)};
+      return {status: 200, data: result.data?.filter(org => org.owner === null) || []};
     }
     return result;
   }

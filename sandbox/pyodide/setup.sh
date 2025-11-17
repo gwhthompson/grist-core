@@ -11,6 +11,6 @@ if [[ ! -e _build/worker ]]; then
   cd _build/worker
   yarn init --yes
   touch yarn.lock
-  yarn add pyodide@0.23.4
+  yarn add pyodide@0.29.0
   cd ../..
 fi

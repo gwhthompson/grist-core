@@ -103,7 +103,7 @@ return 0
                               r"""
                                 File "usercode", line 5
                                   return: 0
-                                        \^
+                                        \^+
                               SyntaxError: invalid syntax
                               """
                             ))
@@ -138,8 +138,14 @@ return 0
                               """
                             ))
 
+    # As of friendly-traceback 0.7.61+, explanatory text is added to Exception messages
+    expected_message = textwrap.dedent("""\
+        hello
+
+        Most built-in exceptions defined by Python are derived from `Exception`.
+        All user-defined exceptions should also be derived from this class.""")
     self.assertFormulaError(self.engine.get_formula_error('Math', 'custom_err', 3),
-                            Exception, "hello")
+                            Exception, expected_message)
 
   def test_missing_all_attribute(self):
     # Test that `Table.Col` raises a helpful AttributeError suggesting to use `Table.all.Col`.

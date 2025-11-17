@@ -49,7 +49,7 @@ jobs:
     if: ${{ vars.RUN_DAILY_BUILD }}
     strategy:
       matrix:
-        python-version: [3.11]
+        python-version: [3.13]
         node-version: [22.x]
         image:
           # We build two images, `grist-oss` and `grist`.

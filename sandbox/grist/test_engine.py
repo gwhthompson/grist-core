@@ -280,13 +280,13 @@ class EngineTestCase(unittest.TestCase):
     self.assertEqual(exc._message, message)
     if tracebackRegexp:
       traceback_string = exc.details
-      if sys.version_info >= (3, 11) and type_ != SyntaxError:
-        # Python 3.11+ adds lines with only spaces and ^ to indicate the location of the error.
+      if sys.version_info >= (3, 11) and type_ not in (SyntaxError, IndentationError):
+        # Python 3.11+ adds lines with only spaces, ^ and ~ to indicate the location of the error.
         # We remove those lines to make the test work with both old and new versions.
-        # This doesn't apply to SyntaxError, which has those lines in all versions.
+        # This doesn't apply to SyntaxError/IndentationError, where we keep these indicators.
         traceback_string = "\n".join(
           line for line in traceback_string.splitlines()
-          if set(line) != {" ", "^"}
+          if not set(line).issubset({" ", "^", "~"})
         )
       self.assertRegex(traceback_string.strip(), tracebackRegexp.strip())
 

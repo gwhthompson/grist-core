@@ -604,7 +604,7 @@ Then, you can run the main test suite like so:
 yarn test
 ```
 
-Python tests may also be run locally. (Note: currently requires Python 3.10 - 3.11.)
+Python tests may also be run locally. (Note: currently requires Python 3.13.)
 
 ```
 yarn test:python

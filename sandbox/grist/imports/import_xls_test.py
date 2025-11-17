@@ -131,8 +131,8 @@ class TestImportXLS(unittest.TestCase):
     # Check that we don't fail when encountering unusual dates and times (e.g. 0 or 38:00:00).
     parsed_file = import_xls.parse_file(*_get_fixture('strange_dates.xlsx'))
     tables = parsed_file[1]
-    # We test non-failure, but the result is not really what we want. E.g. "1:10" and "100:20:30"
-    # would be best left as text.
+    # As of openpyxl 3.1+, elapsed times (e.g. "1:10" and "100:20:30") are now correctly
+    # left as text, which is the desired behavior.
     self.assertEqual(tables, [{
       'table_name': u'Sheet1',
       'column_metadata': [
@@ -140,7 +140,7 @@ class TestImportXLS(unittest.TestCase):
         {'id': 'b', 'type': 'Date'},
         {'id': 'c', 'type': 'Any'},
         {'id': 'd', 'type': 'Any'},
-        {'id': 'e', 'type': 'DateTime'},
+        {'id': 'e', 'type': 'Any'},
         {'id': 'f', 'type': 'Date'},
         {'id': 'g', 'type': 'Any'},
         {'id': 'h', 'type': 'Date'},
@@ -152,7 +152,7 @@ class TestImportXLS(unittest.TestCase):
         [1568851200.0],
         [u'01:10:00'],
         [u'10:20:30'],
-        [-2208713970.0],
+        [u'4 days, 4:20:30'],
         [-2207347200.0],
         [u'7/4/1776'],
         [205286400.0],

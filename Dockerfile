@@ -60,8 +60,8 @@ RUN \
 ## Python collection stage
 ################################################################################
 
-# Fetch python3.11
-FROM python:3.11-slim-trixie AS collector-py3
+# Fetch python3.13
+FROM python:3.13-slim-trixie AS collector-py3
 COPY sandbox/requirements.txt requirements.txt
 RUN \
   pip3 install -r requirements.txt
@@ -111,13 +111,13 @@ COPY --from=builder /grist/app/cli.sh /grist/cli
 COPY --from=builder /grist/ext/asset[s] /grist/ext/assets
 
 # Copy python3 files.
-COPY --from=collector-py3 /usr/local/bin/python3.11 /usr/bin/python3.11
-COPY --from=collector-py3 /usr/local/lib/python3.11 /usr/local/lib/python3.11
-COPY --from=collector-py3 /usr/local/lib/libpython3.11.* /usr/local/lib/
+COPY --from=collector-py3 /usr/local/bin/python3.13 /usr/bin/python3.13
+COPY --from=collector-py3 /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=collector-py3 /usr/local/lib/libpython3.13.* /usr/local/lib/
 # Set default to python3
 RUN \
-  ln -s /usr/bin/python3.11 /usr/bin/python && \
-  ln -s /usr/bin/python3.11 /usr/bin/python3 && \
+  ln -s /usr/bin/python3.13 /usr/bin/python && \
+  ln -s /usr/bin/python3.13 /usr/bin/python3 && \
   ldconfig
 
 # Copy runsc.

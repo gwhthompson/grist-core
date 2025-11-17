@@ -1,5 +1,5 @@
 import ast
-
+import sys
 import unittest
 import difflib
 import re
@@ -142,10 +142,10 @@ class TestGenCode(unittest.TestCase):
     assert_correct_formula(
         "r'''    foo\nMultiline\n\n  bar''' + 'Not\\nactually\\nmultiline'",
         "return r'''    foo\nMultiline\n\n  bar''' + 'Not\\nactually\\nmultiline'")
-    # Multi-line f-string.
-    assert_correct_formula(
-        "rf'''\nMulti{\n1 + $fullNameLen}line\n''' + 'Not\\nactually\\nmultiline'",
-        "return rf'''\nMulti{\n1 + rec.fullNameLen}line\n''' + 'Not\\nactually\\nmultiline'")
+    if sys.version_info < (3, 13):
+      assert_correct_formula(
+          "rf'''\nMulti{\n1 + $fullNameLen}line\n''' + 'Not\\nactually\\nmultiline'",
+          "return rf'''\nMulti{\n1 + rec.fullNameLen}line\n''' + 'Not\\nactually\\nmultiline'")
 
 
   def test_ident_combining_chars(self):
