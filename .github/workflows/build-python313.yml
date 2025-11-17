@@ -25,7 +25,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: grist
+  IMAGE_NAME: grist-core
 
 jobs:
   build:
@@ -86,7 +86,6 @@ jobs:
             type=raw,value=${{ steps.version.outputs.branch_name }}
             type=raw,value=${{ steps.version.outputs.package_version }}-${{ steps.version.outputs.branch_name }}
             type=raw,value=${{ steps.version.outputs.git_describe }}
-            type=raw,value=latest
             type=raw,value=${{ inputs.custom_tag }},enable=${{ inputs.custom_tag != '' }}
 
       - name: Build and push Docker image
@@ -115,5 +114,5 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull command:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.branch_name }}" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
